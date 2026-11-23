@@ -10,6 +10,10 @@
 #include "bullet/bullet_rigid_body.h"
 #include "bullet/bullet_world.h"
 
+#include "mmd/mmd_joint.h"
+#include "mmd/mmd_physics_world.h"
+#include "mmd/mmd_rigid_body.h"
+
 using namespace godot;
 
 void initialize_gdextension_types(ModuleInitializationLevel p_level) {
@@ -43,6 +47,11 @@ void initialize_gdextension_types(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(BulletGeneric6DofConstraint);
 	GDREGISTER_CLASS(BulletGeneric6DofSpringConstraint);
 	GDREGISTER_CLASS(BulletFixedConstraint);
+
+	// MMD (PMX rigid body / joint) layer.
+	GDREGISTER_CLASS(MMDPhysicsWorld);
+	GDREGISTER_CLASS(MMDRigidBody);
+	GDREGISTER_CLASS(MMDJoint);
 }
 
 void uninitialize_gdextension_types(ModuleInitializationLevel p_level) {

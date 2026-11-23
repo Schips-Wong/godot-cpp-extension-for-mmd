@@ -47,7 +47,7 @@ build_env.Append(CPPDEFINES=["_CRT_SECURE_NO_WARNINGS"])
 if env["precision"] == "double":
     build_env.Append(CPPDEFINES=["BT_USE_DOUBLE_PRECISION"])
 
-sources = Glob("src/*.cpp") + Glob("src/bullet/*.cpp")
+sources = Glob("src/*.cpp") + Glob("src/bullet/*.cpp") + Glob("src/mmd/*.cpp")
 
 
 def collect_sources(root):

@@ -49,6 +49,57 @@ Constraint subclasses: `BulletPoint2PointConstraint`, `BulletHingeConstraint`,
 `configure_spring(axis, stiffness, damping)` where axis `0..2` is linear X/Y/Z and `3..5` is
 angular X/Y/Z.
 
+## MMD layer
+
+`MMDPhysicsWorld`, `MMDRigidBody` and `MMDJoint` put the PMX rigid body / joint model on top of
+the generic classes above. Bones are driven directly on a `Skeleton3D`.
+
+| Class | Notes |
+| --- | --- |
+| `MMDPhysicsWorld` | `BulletWorld` + `skeleton` (NodePath). `simulation_enabled`, `reset_physics()`, `find_bone(name)`. Bones are read before the step and written after it. |
+| `MMDRigidBody` | `bone_name` / `bone_index`, `bone_mode`, `shape_type` + `size` (PMX sphere 0 / box 1 / capsule 2), `mass`, damping, `group` 0..15, `group_mask` 16 bits, `bone_offset`. |
+| `MMDJoint` | `BulletGeneric6DofSpringConstraint` with PMX spring layout: `linear_spring` / `angular_spring` are one stiffness per axis (0 disables that spring), plus `spring_damping`. |
+
+`bone_mode` follows PMX:
+
+* `BONE_FOLLOW_BONE` (0) – the bone drives the body. The body becomes kinematic.
+* `BONE_PHYSICS` (1) – the body drives the bone.
+* `BONE_PHYSICS_WITH_BONE_OFFSET` (2) – currently identical to 1, matching the reference
+  GodotMMD implementation.
+
+`bone_offset` is the body frame expressed in bone space (`body = bone_offset * bone`). It is
+derived automatically on the first simulation step from the node transform and the bone pose,
+which is why an importer only has to place `MMDRigidBody` nodes at the PMX rigid body transform.
+A body never falls asleep (sleeping thresholds are 0), so bones cannot freeze mid animation.
+
+```gdscript
+var world := MMDPhysicsWorld.new()
+world.skeleton = ^"../Skeleton3D"
+add_child(world)
+
+var body := MMDRigidBody.new()
+body.bone_name = "左腕"
+body.bone_mode = MMDRigidBody.BONE_PHYSICS
+body.shape_type = MMDRigidBody.SHAPE_CAPSULE
+body.size = Vector3(0.1, 0.6, 0.0)
+body.mass = 1.0
+body.position = Vector3(0.0, 1.0, 0.0) # PMX rigid body transform, model space
+world.add_child(body)
+
+var joint := MMDJoint.new()
+joint.body_a = body.get_path()
+joint.body_b = other_body.get_path()
+joint.position = Vector3(0.0, 1.0, 0.0)
+joint.angular_lower_limit = Vector3(-0.5, -0.5, -0.5)
+joint.angular_upper_limit = Vector3(0.5, 0.5, 0.5)
+joint.linear_spring = Vector3(0.0, 0.0, 0.0)
+joint.angular_spring = Vector3(0.0, 5.0, 0.0)
+world.add_child(joint)
+```
+
+`project/mmd_demo.tscn` builds a three bone chain at runtime and prints the bone heights, and
+`project/bullet_demo.tscn` shows the generic API.
+
 ## Usage
 
 ```gdscript
@@ -104,4 +155,6 @@ match.
 * Overlap/ghost queries (`btGhostObject`) and convex sweeps.
 * Concave `GImpact` shapes for moving meshes.
 * A `PhysicsServer3D` based back end (this extension only provides its own nodes).
-* MMD specific helpers (PMX rigid body / joint import).
+* PMX / VMD parsing: the MMD layer expects already imported bones and node transforms.
+* PMX mode 2 (`物理演算+ボーン位置合わせ`) does not yet keep the animated bone position.
+* Scaled model nodes: bodies live in world space, so the skeleton should keep a unit scale.

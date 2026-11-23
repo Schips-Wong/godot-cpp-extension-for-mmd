@@ -98,8 +98,11 @@ protected:
 
 	void _ensure_body();
 	void _apply_common_properties();
-	void _prepare_step();
-	void _finish_step();
+
+	// Simulation hooks, overridden by bone driven bodies (see MMDRigidBody).
+	// _prepare_step() runs before the world is stepped, _finish_step() afterwards.
+	virtual void _prepare_step();
+	virtual void _finish_step();
 
 public:
 	BulletRigidBody();
@@ -109,7 +112,7 @@ public:
 	btRigidBody *_get_bt_body() const { return body; }
 
 	// Destroys and recreates the underlying btRigidBody using the current properties.
-	void rebuild();
+	virtual void rebuild();
 
 	Ref<BulletCollisionShape> get_shape() const;
 	void set_shape(const Ref<BulletCollisionShape> &p_shape);

@@ -77,6 +77,12 @@ target_sources(${LIBNAME}
     src/bullet/bullet_constraint.h
     src/bullet/bullet_world.cpp
     src/bullet/bullet_world.h
+    src/mmd/mmd_physics_world.cpp
+    src/mmd/mmd_physics_world.h
+    src/mmd/mmd_rigid_body.cpp
+    src/mmd/mmd_rigid_body.h
+    src/mmd/mmd_joint.cpp
+    src/mmd/mmd_joint.h
     ${BULLET_SOURCES}
 )
 
