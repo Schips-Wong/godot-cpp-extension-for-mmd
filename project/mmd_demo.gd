@@ -12,6 +12,10 @@ var skeleton: Skeleton3D
 var world: MMDPhysicsWorld
 var bodies: Array[MMDRigidBody] = []
 
+const GROUND_LAYER := 2
+
+var probe_shape: BulletSphereShape
+
 var _report_timer := 0.0
 var _elapsed := 0.0
 var _swing := 0.0
@@ -26,9 +30,13 @@ func _ready() -> void:
 	add_child(world)
 	world.skeleton = world.get_path_to(skeleton)
 
+	_build_ground()
 	_build_bodies()
 	_build_joints()
 	_build_visuals()
+
+	probe_shape = BulletSphereShape.new()
+	probe_shape.radius = 0.2
 
 	print("[mmd] chain2 height before simulation = %.3f" % _bone_height(2))
 
@@ -48,6 +56,19 @@ func _build_skeleton() -> void:
 	skeleton.reset_bone_poses()
 
 
+func _build_ground() -> void:
+	var shape := BulletBoxShape.new()
+	shape.half_extents = Vector3(4.0, 0.2, 4.0)
+
+	var ground := BulletRigidBody.new()
+	ground.name = "Ground"
+	ground.mode = BulletRigidBody.MODE_STATIC
+	ground.shape = shape
+	ground.collision_layer = GROUND_LAYER # PMX group 1
+	ground.position = Vector3(0, -2.0, 0)
+	world.add_child(ground)
+
+
 func _build_bodies() -> void:
 	for index in BONE_NAMES.size():
 		var body := MMDRigidBody.new()
@@ -62,8 +83,8 @@ func _build_bodies() -> void:
 		body.friction = 0.5
 		body.restitution = 0.0
 		body.group = 0
-		# Links of the same chain must not collide with each other.
-		body.group_mask = 0
+		# PMX group mask: collide with every group (the links are 1 m apart, so they never touch).
+		body.group_mask = 0xFFFF
 		body.position = Vector3(index * LINK_LENGTH, 0, 0)
 		world.add_child(body)
 		bodies.append(body)
@@ -135,5 +156,14 @@ func _physics_process(delta: float) -> void:
 		return
 	_report_timer = 0.0
 	var tip := _bone_position(2)
-	print("[mmd] bone heights: root=%.3f chain1=%.3f chain2=%.3f | tip=(%.2f, %.2f)" % [
-		_bone_height(0), _bone_height(1), _bone_height(2), tip.x, tip.y])
+
+	# Sweep the tip downwards. collision layer 2 is the ground group, so the chain bodies
+	# (which sit on layer 1) are ignored and the fraction is the real distance to the floor.
+	var sweep_from := Transform3D(Basis(), tip)
+	var sweep_to := Transform3D(Basis(), tip + Vector3(0, -4.0, 0))
+	var sweep := world.convex_sweep(probe_shape, sweep_from, sweep_to, GROUND_LAYER)
+	var overlapping := world.overlap_test(probe_shape, sweep_from)
+
+	print("[mmd] bone heights: root=%.3f chain1=%.3f chain2=%.3f | tip=(%.2f, %.2f) | ground_hit=%s dist=%.2f overlaps=%d" % [
+		_bone_height(0), _bone_height(1), _bone_height(2), tip.x, tip.y,
+		sweep.get("hit", false), 4.0 * float(sweep.get("fraction", 1.0)), overlapping.size()])

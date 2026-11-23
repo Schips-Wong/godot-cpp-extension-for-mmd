@@ -71,6 +71,8 @@ target_sources(${LIBNAME}
     src/bullet/bullet_util.h
     src/bullet/bullet_collision_shape.cpp
     src/bullet/bullet_collision_shape.h
+    src/bullet/bullet_ghost_body.cpp
+    src/bullet/bullet_ghost_body.h
     src/bullet/bullet_rigid_body.cpp
     src/bullet/bullet_rigid_body.h
     src/bullet/bullet_constraint.cpp

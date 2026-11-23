@@ -36,9 +36,33 @@ Every shape exposes `margin`, `local_scaling` and `calculate_local_inertia(mass)
 
 | Node | Notes |
 | --- | --- |
-| `BulletWorld` | owns the `btDiscreteDynamicsWorld`: `gravity`, `max_sub_steps`, `fixed_timestep`, `auto_step`, `contact_monitor`, `ray_test()`, `ray_test_all()` |
-| `BulletRigidBody` | `shape`, `mode` (Static/Kinematic/Dynamic), `mass`, `friction`, `restitution`, `rolling_friction`, `linear_damping`, `angular_damping`, `collision_layer`, `collision_mask`, `inertia`, `activation_state`, velocities, impulses |
+| `BulletWorld` | owns the `btDiscreteDynamicsWorld`: `gravity`, `max_sub_steps`, `fixed_timestep`, `auto_step`, `contact_monitor`, plus the query API below |
+| `BulletRigidBody` | `shape`, `mode` (Static/Kinematic/Dynamic), `mass`, `friction`, `restitution`, `rolling_friction`, `linear_damping`, `angular_damping`, `collision_layer`, `collision_mask`, `inertia`, `activation_state`, velocities, impulses, `get_body_transform()` / `set_body_transform()` |
+| `BulletGhostBody` | sensor volume (`btGhostObject`): `shape`, `collision_layer`, `collision_mask`, `monitoring`, `get_overlapping_bodies()`, `is_overlapping_body()`, `body_entered` / `body_exited` signals |
 | `BulletConstraint` | base class; its own global transform is the joint frame (like an MMD joint). `use_world_transform = false` + `frame_in_a` / `frame_in_b` uses explicit frames instead |
+
+### Queries
+
+All queries use the same filter arguments as `ray_test()`: `collision_mask` (default `-1` = all)
+and `collision_layer` (default `-1` = the default group). Note that a body is only seen when the
+two filters are mutually satisfied, so give query-only geometry (ghosts, sensors) its own layer.
+
+| Method | Result |
+| --- | --- |
+| `ray_test(from, to)` / `ray_test_all(from, to)` | closest hit / every hit as `{ hit, position, normal, fraction, collider }` |
+| `convex_sweep(shape, from, to)` / `convex_sweep_all(...)` | sweeps a **convex** shape, same dictionary layout |
+| `contact_test(shape, transform)` | touching contacts as `{ position, normal, distance, collider }` |
+| `overlap_test(shape, transform)` | colliders overlapping the placed shape (each once) |
+
+`from` / `to` of the sweeps are full `Transform3D`s, so the shape orientation during the sweep is
+under control. `BvhTriangleMesh` and `Compound` shapes are rejected by `convex_sweep()` (Bullet
+only casts convex shapes); use `contact_test()` / `overlap_test()` or a convex hull instead.
+
+```gdscript
+var hit := world.convex_sweep(probe, Transform3D(Basis(), tip), Transform3D(Basis(), tip + Vector3.DOWN * 3.0), ground_layer)
+if hit.get("hit", false):
+	print("ground distance %.2f" % (3.0 * hit["fraction"]))
+```
 
 Constraint subclasses: `BulletPoint2PointConstraint`, `BulletHingeConstraint`,
 `BulletSliderConstraint`, `BulletConeTwistConstraint`, `BulletGeneric6DofConstraint`,
@@ -97,8 +121,10 @@ joint.angular_spring = Vector3(0.0, 5.0, 0.0)
 world.add_child(joint)
 ```
 
-`project/mmd_demo.tscn` builds a three bone chain at runtime and prints the bone heights, and
-`project/bullet_demo.tscn` shows the generic API.
+`project/mmd_demo.tscn` builds a three bone chain at runtime, swings the root bone and prints the
+bone heights plus a downward `convex_sweep()` distance to a static ground body (filtered to the
+ground's collision layer). `project/bullet_demo.tscn` shows the generic API, including a
+`BulletGhostBody` sensor that slides through the box stack and a convex sweep.
 
 ## Usage
 
@@ -152,7 +178,6 @@ match.
 
 ## Not implemented yet
 
-* Overlap/ghost queries (`btGhostObject`) and convex sweeps.
 * Concave `GImpact` shapes for moving meshes.
 * A `PhysicsServer3D` based back end (this extension only provides its own nodes).
 * PMX / VMD parsing: the MMD layer expects already imported bones and node transforms.

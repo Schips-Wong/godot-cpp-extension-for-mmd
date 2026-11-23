@@ -6,7 +6,10 @@ extends Node3D
 const BOX_COUNT := 6
 
 var world: BulletWorld
+var ghost: BulletGhostBody
+var _query_shape: BulletSphereShape
 var _report_timer := 0.0
+var _elapsed := 0.0
 
 
 func _ready() -> void:
@@ -19,7 +22,11 @@ func _ready() -> void:
 	_add_ground()
 	_add_box_stack()
 	_add_spring_box()
+	_add_ghost_probe()
 	_add_camera_and_light()
+
+	_query_shape = BulletSphereShape.new()
+	_query_shape.radius = 0.25
 
 
 func _add_ground() -> void:
@@ -82,6 +89,27 @@ func _add_spring_box() -> void:
 	joint.configure_spring(1, 25.0, 2.0)
 
 
+func _add_ghost_probe() -> void:
+	var shape := BulletSphereShape.new()
+	shape.radius = 1.4
+
+	ghost = BulletGhostBody.new()
+	ghost.name = "Ghost"
+	ghost.shape = shape
+	ghost.position = Vector3(0, 7.0, 0)
+	ghost.body_entered.connect(_on_ghost_entered)
+	ghost.body_exited.connect(_on_ghost_exited)
+	world.add_child(ghost)
+
+
+func _on_ghost_entered(body: BulletRigidBody) -> void:
+	print("[bullet] ghost entered %s" % body.name)
+
+
+func _on_ghost_exited(body: BulletRigidBody) -> void:
+	print("[bullet] ghost exited %s" % body.name)
+
+
 func _create_body(name: String, shape: BulletCollisionShape, position: Vector3, mode: int, mass: float) -> BulletRigidBody:
 	var body := BulletRigidBody.new()
 	body.name = name
@@ -125,6 +153,12 @@ func _on_sphere_entered(body: BulletRigidBody) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_elapsed += delta
+
+	# Slide the sensor up and down through the box stack.
+	if ghost != null:
+		ghost.position.y = 4.0 + cos(_elapsed * 0.8) * 2.5
+
 	_report_timer += delta
 	if _report_timer < 1.0:
 		return
@@ -139,4 +173,14 @@ func _physics_process(delta: float) -> void:
 	var spring_height: float = 0.0
 	if spring_box != null:
 		spring_height = spring_box.position.y
-	print("[bullet] bodies=%d ray_hit=%s collider=%s spring_y=%.2f" % [world.get_rigid_body_count(), hit.get("hit", false), collider_name, spring_height])
+
+	# Sweep a small sphere down the stack: the fraction tells how far it travelled.
+	var sweep := world.convex_sweep(
+		_query_shape,
+		Transform3D(Basis(), Vector3(3.0, 6.0, 0.0)),
+		Transform3D(Basis(), Vector3(3.0, -1.0, 0.0)))
+	var sweep_distance := 7.0 * float(sweep.get("fraction", 1.0))
+
+	print("[bullet] bodies=%d ray_hit=%s collider=%s spring_y=%.2f ghost_overlaps=%d sweep_hit=%s sweep_dist=%.2f" % [
+		world.get_rigid_body_count(), hit.get("hit", false), collider_name, spring_height,
+		ghost.get_overlapping_body_count(), sweep.get("hit", false), sweep_distance])

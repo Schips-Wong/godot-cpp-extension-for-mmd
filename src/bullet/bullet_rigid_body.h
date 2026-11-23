@@ -111,6 +111,11 @@ public:
 	// Internal use only (deliberately not exposed to scripts): the raw Bullet body.
 	btRigidBody *_get_bt_body() const { return body; }
 
+	// Transform of the simulated body (differs from the node transform for bone driven bodies).
+	Transform3D get_body_transform() const;
+	// Forces the body transform, ignoring the node transform (useful for teleports).
+	void set_body_transform(const Transform3D &p_transform);
+
 	// Destroys and recreates the underlying btRigidBody using the current properties.
 	virtual void rebuild();
 

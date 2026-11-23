@@ -18,3 +18,7 @@
 继续推进MMD方向，
 
 你还可以参考`D:\tmp\mmd\ref\GodotMMD 1.24-godot-4-c#`里面的有关调用，
+
+### c
+
+先补 btGhostObject/凸体扫掠，让 MMD 模型与地面/场景碰撞查询更完整。

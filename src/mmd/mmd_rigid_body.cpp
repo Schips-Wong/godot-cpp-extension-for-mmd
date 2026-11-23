@@ -142,9 +142,16 @@ Transform3D MMDRigidBody::_get_bone_world_pose() const {
 	if (skeleton == nullptr || resolved_bone < 0) {
 		return Transform3D();
 	}
-	const Transform3D skeleton_transform = skeleton->get_global_transform();
-	const Transform3D bone_pose = skeleton->get_bone_global_pose_no_override(resolved_bone);
-	return skeleton_transform * bone_pose;
+
+	// The animated pose is rebuilt from the local bone poses on purpose:
+	// get_bone_global_pose() already contains our own override, and
+	// get_bone_global_pose_no_override() can return a stale identity pose once another
+	// caller cleared the dirty flag (Godot 4.4+).
+	Transform3D bone_pose = skeleton->get_bone_pose(resolved_bone);
+	for (int32_t parent = skeleton->get_bone_parent(resolved_bone); parent >= 0; parent = skeleton->get_bone_parent(parent)) {
+		bone_pose = skeleton->get_bone_pose(parent) * bone_pose;
+	}
+	return skeleton->get_global_transform() * bone_pose;
 }
 
 void MMDRigidBody::_ensure_bone_offset() {

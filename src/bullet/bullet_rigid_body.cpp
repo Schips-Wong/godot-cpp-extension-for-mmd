@@ -27,6 +27,8 @@ BulletRigidBody::~BulletRigidBody() {
 
 void BulletRigidBody::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("rebuild"), &BulletRigidBody::rebuild);
+	ClassDB::bind_method(D_METHOD("get_body_transform"), &BulletRigidBody::get_body_transform);
+	ClassDB::bind_method(D_METHOD("set_body_transform", "transform"), &BulletRigidBody::set_body_transform);
 
 	ClassDB::bind_method(D_METHOD("get_shape"), &BulletRigidBody::get_shape);
 	ClassDB::bind_method(D_METHOD("set_shape", "shape"), &BulletRigidBody::set_shape);
@@ -215,6 +217,27 @@ void BulletRigidBody::rebuild() {
 	if (current_world != nullptr) {
 		current_world->add_rigid_body(this);
 	}
+}
+
+Transform3D BulletRigidBody::get_body_transform() const {
+	if (body == nullptr) {
+		return get_global_transform();
+	}
+	return bullet_util::to_godot(body->getWorldTransform());
+}
+
+void BulletRigidBody::set_body_transform(const Transform3D &p_transform) {
+	if (body == nullptr) {
+		return;
+	}
+	const btTransform transform = bullet_util::to_bt(p_transform);
+	body->setWorldTransform(transform);
+	body->setInterpolationWorldTransform(transform);
+	if (motion_state != nullptr) {
+		motion_state->world_transform = transform;
+		motion_state->transform_dirty = false;
+	}
+	body->activate(true);
 }
 
 void BulletRigidBody::_apply_common_properties() {

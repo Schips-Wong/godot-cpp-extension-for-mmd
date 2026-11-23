@@ -7,6 +7,7 @@
 #include "godot_cpp/core/math.hpp"
 
 #include "bullet_constraint.h"
+#include "bullet_ghost_body.h"
 #include "bullet_rigid_body.h"
 #include "bullet_util.h"
 
@@ -45,6 +46,114 @@ public:
 			btCollisionWorld::AllHitsRayResultCallback(p_from, p_to) {}
 };
 
+class BulletClosestConvexSweepCallback : public btCollisionWorld::ClosestConvexResultCallback {
+public:
+	BulletClosestConvexSweepCallback(const btVector3 &p_from, const btVector3 &p_to) :
+			btCollisionWorld::ClosestConvexResultCallback(p_from, p_to) {}
+};
+
+class BulletAllHitsConvexSweepCallback : public btCollisionWorld::ConvexResultCallback {
+public:
+	struct Hit {
+		btVector3 position;
+		btVector3 normal;
+		btScalar fraction = btScalar(1.0);
+		const btCollisionObject *object = nullptr;
+	};
+
+	BulletAllHitsConvexSweepCallback(const btVector3 &p_from, const btVector3 &p_to) :
+			from(p_from), to(p_to) {}
+
+	btScalar addSingleResult(btCollisionWorld::LocalConvexResult &p_result, bool p_normal_in_world_space) override {
+		Hit hit;
+		hit.position = p_result.m_hitPointLocal;
+		hit.normal = p_result.m_hitNormalLocal;
+		if (!p_normal_in_world_space && p_result.m_hitCollisionObject != nullptr) {
+			hit.normal = p_result.m_hitCollisionObject->getWorldTransform().getBasis() * p_result.m_hitNormalLocal;
+		}
+		hit.fraction = p_result.m_hitFraction;
+		hit.object = p_result.m_hitCollisionObject;
+		hits.push_back(hit);
+		// Keep m_closestHitFraction untouched so every hit along the sweep is reported.
+		return m_closestHitFraction;
+	}
+
+	btVector3 from;
+	btVector3 to;
+	std::vector<Hit> hits;
+};
+
+class BulletContactCollector : public btCollisionWorld::ContactResultCallback {
+public:
+	BulletContactCollector(btCollisionObject *p_probe, bool p_unique_objects) :
+			probe(p_probe), unique_objects(p_unique_objects) {}
+
+	btScalar addSingleResult(btManifoldPoint &p_point, const btCollisionObjectWrapper *p_object0, int32_t, int32_t, const btCollisionObjectWrapper *p_object1, int32_t, int32_t) override {
+		btCollisionObject *const first = p_object0 != nullptr ? const_cast<btCollisionObject *>(p_object0->getCollisionObject()) : nullptr;
+		btCollisionObject *const second = p_object1 != nullptr ? const_cast<btCollisionObject *>(p_object1->getCollisionObject()) : nullptr;
+		btCollisionObject *other = (first == probe) ? second : first;
+		if (other == nullptr || other == probe) {
+			return 0.0;
+		}
+
+		if (unique_objects) {
+			if (std::find(objects.begin(), objects.end(), other) == objects.end()) {
+				objects.push_back(other);
+			}
+			return 0.0;
+		}
+
+		Dictionary contact;
+		// Report the point that lies on the probe shape.
+		if (first == probe) {
+			contact["position"] = bullet_util::to_godot(p_point.m_positionWorldOnA);
+			contact["normal"] = bullet_util::to_godot(-p_point.m_normalWorldOnB);
+		} else {
+			contact["position"] = bullet_util::to_godot(p_point.m_positionWorldOnB);
+			contact["normal"] = bullet_util::to_godot(p_point.m_normalWorldOnB);
+		}
+		contact["distance"] = static_cast<real_t>(p_point.m_distance1);
+		contact["collider"] = static_cast<Object *>(other->getUserPointer());
+		contacts.push_back(contact);
+		return 0.0;
+	}
+
+	btCollisionObject *probe = nullptr;
+	bool unique_objects = false;
+	std::vector<Dictionary> contacts;
+	std::vector<btCollisionObject *> objects;
+};
+
+// Creates a temporary collision object so Bullet can run narrow phase queries against it.
+class BulletProbeObject {
+public:
+	BulletProbeObject(btDiscreteDynamicsWorld *p_world, const btCollisionShape *p_shape, const btTransform &p_transform, int32_t p_layer, int32_t p_mask) :
+			world(p_world) {
+		object = new btCollisionObject();
+		object->setCollisionShape(const_cast<btCollisionShape *>(p_shape));
+		object->setWorldTransform(p_transform);
+		object->setCollisionFlags(object->getCollisionFlags() | btCollisionObject::CF_STATIC_OBJECT);
+		group = static_cast<short>(p_layer < 0 ? btBroadphaseProxy::DefaultFilter : p_layer);
+		mask = static_cast<short>(p_mask < 0 ? btBroadphaseProxy::AllFilter : p_mask);
+		world->addCollisionObject(object, group, mask);
+	}
+
+	~BulletProbeObject() {
+		world->removeCollisionObject(object);
+		delete object;
+	}
+
+	btCollisionObject *get_object() const { return object; }
+	short get_group() const { return group; }
+	short get_mask() const { return mask; }
+
+private:
+	btDiscreteDynamicsWorld *world = nullptr;
+	btCollisionObject *object = nullptr;
+	short group = 0;
+	short mask = 0;
+};
+
 } // namespace
 
 BulletWorld::BulletWorld() {
@@ -81,6 +190,12 @@ void BulletWorld::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("ray_test", "from", "to", "collision_mask", "collision_layer"), &BulletWorld::ray_test, DEFVAL(-1), DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("ray_test_all", "from", "to", "collision_mask", "collision_layer"), &BulletWorld::ray_test_all, DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("convex_sweep", "shape", "from", "to", "collision_mask", "collision_layer"), &BulletWorld::convex_sweep, DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("convex_sweep_all", "shape", "from", "to", "collision_mask", "collision_layer"), &BulletWorld::convex_sweep_all, DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("contact_test", "shape", "transform", "collision_mask", "collision_layer"), &BulletWorld::contact_test, DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("overlap_test", "shape", "transform", "collision_mask", "collision_layer"), &BulletWorld::overlap_test, DEFVAL(-1), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("get_ghost_bodies"), &BulletWorld::get_ghost_bodies);
+	ClassDB::bind_method(D_METHOD("get_ghost_body_count"), &BulletWorld::get_ghost_body_count);
 
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "gravity", PROPERTY_HINT_RANGE, "-100,100,0.001,or_less,or_greater"), "set_gravity", "get_gravity");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_sub_steps", PROPERTY_HINT_RANGE, "1,64,1,or_greater"), "set_max_sub_steps", "get_max_sub_steps");
@@ -96,6 +211,10 @@ void BulletWorld::_create_world() {
 	solver = new btSequentialImpulseConstraintSolver();
 	dynamics_world = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collision_configuration);
 	dynamics_world->setGravity(bullet_util::to_bt(gravity));
+
+	// Required for btGhostObject overlap tracking (BulletGhostBody).
+	ghost_pair_callback = new btGhostPairCallback();
+	broadphase->getOverlappingPairCache()->setInternalGhostPairCallback(ghost_pair_callback);
 }
 
 void BulletWorld::_destroy_world() {
@@ -105,12 +224,25 @@ void BulletWorld::_destroy_world() {
 				constraint->teardown();
 			}
 		}
+		for (BulletGhostBody *ghost : ghosts) {
+			if (ghost != nullptr) {
+				ghost->_detach_from_world();
+			}
+		}
+		ghosts.clear();
 		delete dynamics_world;
 		dynamics_world = nullptr;
 	}
 	if (solver != nullptr) {
 		delete solver;
 		solver = nullptr;
+	}
+	if (broadphase != nullptr) {
+		broadphase->getOverlappingPairCache()->setInternalGhostPairCallback(nullptr);
+	}
+	if (ghost_pair_callback != nullptr) {
+		delete ghost_pair_callback;
+		ghost_pair_callback = nullptr;
 	}
 	if (broadphase != nullptr) {
 		delete broadphase;
@@ -126,6 +258,7 @@ void BulletWorld::_destroy_world() {
 	}
 	constraints.clear();
 	bodies.clear();
+	ghosts.clear();
 }
 
 void BulletWorld::_ready() {
@@ -152,6 +285,9 @@ void BulletWorld::step_simulation(double p_delta) {
 	for (BulletRigidBody *body : bodies) {
 		body->_prepare_step();
 	}
+	for (BulletGhostBody *ghost : ghosts) {
+		ghost->_sync_transform();
+	}
 
 	dynamics_world->stepSimulation(
 			static_cast<btScalar>(p_delta),
@@ -160,6 +296,9 @@ void BulletWorld::step_simulation(double p_delta) {
 
 	for (BulletRigidBody *body : bodies) {
 		body->_finish_step();
+	}
+	for (BulletGhostBody *ghost : ghosts) {
+		ghost->_update_overlaps();
 	}
 
 	if (contact_monitor) {
@@ -183,8 +322,9 @@ void BulletWorld::_process_contacts() {
 		if (manifold == nullptr) {
 			continue;
 		}
-		BulletRigidBody *first = static_cast<BulletRigidBody *>(const_cast<btCollisionObject *>(manifold->getBody0())->getUserPointer());
-		BulletRigidBody *second = static_cast<BulletRigidBody *>(const_cast<btCollisionObject *>(manifold->getBody1())->getUserPointer());
+		// The user pointer may belong to a ghost body or another non rigid body object.
+		BulletRigidBody *first = Object::cast_to<BulletRigidBody>(static_cast<Object *>(const_cast<btCollisionObject *>(manifold->getBody0())->getUserPointer()));
+		BulletRigidBody *second = Object::cast_to<BulletRigidBody>(static_cast<Object *>(const_cast<btCollisionObject *>(manifold->getBody1())->getUserPointer()));
 		if (first == nullptr || second == nullptr) {
 			continue;
 		}
@@ -428,4 +568,133 @@ Array BulletWorld::ray_test_all(const Vector3 &p_from, const Vector3 &p_to, int3
 		result.push_back(hit);
 	}
 	return result;
+}
+
+Dictionary BulletWorld::convex_sweep(const Ref<BulletCollisionShape> &p_shape, const Transform3D &p_from, const Transform3D &p_to, int32_t p_collision_mask, int32_t p_collision_layer) const {
+	Dictionary result;
+	result["hit"] = false;
+	if (dynamics_world == nullptr || p_shape.is_null()) {
+		return result;
+	}
+
+	btCollisionShape *bt_shape = p_shape->get_bt_shape();
+	if (bt_shape == nullptr || !bt_shape->isConvex()) {
+		WARN_PRINT("BulletWorld::convex_sweep() needs a convex shape (box, sphere, capsule, cylinder, cone, convex hull).");
+		return result;
+	}
+
+	const btTransform from = bullet_util::to_bt(p_from);
+	const btTransform to = bullet_util::to_bt(p_to);
+	BulletClosestConvexSweepCallback callback(from.getOrigin(), to.getOrigin());
+	callback.m_collisionFilterMask = static_cast<short>(p_collision_mask < 0 ? btBroadphaseProxy::AllFilter : p_collision_mask);
+	callback.m_collisionFilterGroup = static_cast<short>(p_collision_layer < 0 ? btBroadphaseProxy::DefaultFilter : p_collision_layer);
+
+	dynamics_world->convexSweepTest(static_cast<const btConvexShape *>(bt_shape), from, to, callback);
+
+	if (callback.hasHit()) {
+		result = make_hit_dictionary(callback.m_hitPointWorld, callback.m_hitNormalWorld, callback.m_closestHitFraction, const_cast<btCollisionObject *>(callback.m_hitCollisionObject));
+	}
+	return result;
+}
+
+Array BulletWorld::convex_sweep_all(const Ref<BulletCollisionShape> &p_shape, const Transform3D &p_from, const Transform3D &p_to, int32_t p_collision_mask, int32_t p_collision_layer) const {
+	Array result;
+	if (dynamics_world == nullptr || p_shape.is_null()) {
+		return result;
+	}
+
+	btCollisionShape *bt_shape = p_shape->get_bt_shape();
+	if (bt_shape == nullptr || !bt_shape->isConvex()) {
+		WARN_PRINT("BulletWorld::convex_sweep_all() needs a convex shape (box, sphere, capsule, cylinder, cone, convex hull).");
+		return result;
+	}
+
+	const btTransform from = bullet_util::to_bt(p_from);
+	const btTransform to = bullet_util::to_bt(p_to);
+	BulletAllHitsConvexSweepCallback callback(from.getOrigin(), to.getOrigin());
+	callback.m_collisionFilterMask = static_cast<short>(p_collision_mask < 0 ? btBroadphaseProxy::AllFilter : p_collision_mask);
+	callback.m_collisionFilterGroup = static_cast<short>(p_collision_layer < 0 ? btBroadphaseProxy::DefaultFilter : p_collision_layer);
+
+	dynamics_world->convexSweepTest(static_cast<const btConvexShape *>(bt_shape), from, to, callback);
+
+	for (const BulletAllHitsConvexSweepCallback::Hit &hit : callback.hits) {
+		result.push_back(make_hit_dictionary(hit.position, hit.normal, hit.fraction, const_cast<btCollisionObject *>(hit.object)));
+	}
+	return result;
+}
+
+Array BulletWorld::contact_test(const Ref<BulletCollisionShape> &p_shape, const Transform3D &p_transform, int32_t p_collision_mask, int32_t p_collision_layer) const {
+	Array result;
+	if (dynamics_world == nullptr || p_shape.is_null()) {
+		return result;
+	}
+
+	btCollisionShape *bt_shape = p_shape->get_bt_shape();
+	if (bt_shape == nullptr) {
+		return result;
+	}
+
+	BulletProbeObject probe(dynamics_world, bt_shape, bullet_util::to_bt(p_transform), p_collision_layer, p_collision_mask);
+	BulletContactCollector collector(probe.get_object(), false);
+	collector.m_collisionFilterGroup = probe.get_group();
+	collector.m_collisionFilterMask = probe.get_mask();
+
+	dynamics_world->contactTest(probe.get_object(), collector);
+
+	for (const Dictionary &contact : collector.contacts) {
+		result.push_back(contact);
+	}
+	return result;
+}
+
+Array BulletWorld::overlap_test(const Ref<BulletCollisionShape> &p_shape, const Transform3D &p_transform, int32_t p_collision_mask, int32_t p_collision_layer) const {
+	Array result;
+	if (dynamics_world == nullptr || p_shape.is_null()) {
+		return result;
+	}
+
+	btCollisionShape *bt_shape = p_shape->get_bt_shape();
+	if (bt_shape == nullptr) {
+		return result;
+	}
+
+	BulletProbeObject probe(dynamics_world, bt_shape, bullet_util::to_bt(p_transform), p_collision_layer, p_collision_mask);
+	BulletContactCollector collector(probe.get_object(), true);
+	collector.m_collisionFilterGroup = probe.get_group();
+	collector.m_collisionFilterMask = probe.get_mask();
+
+	dynamics_world->contactTest(probe.get_object(), collector);
+
+	for (btCollisionObject *object : collector.objects) {
+		Object *collider = static_cast<Object *>(object->getUserPointer());
+		if (collider != nullptr) {
+			result.push_back(collider);
+		}
+	}
+	return result;
+}
+
+void BulletWorld::add_ghost_body(BulletGhostBody *p_ghost) {
+	if (p_ghost == nullptr) {
+		return;
+	}
+	if (std::find(ghosts.begin(), ghosts.end(), p_ghost) == ghosts.end()) {
+		ghosts.push_back(p_ghost);
+	}
+}
+
+void BulletWorld::remove_ghost_body(BulletGhostBody *p_ghost) {
+	ghosts.erase(std::remove(ghosts.begin(), ghosts.end(), p_ghost), ghosts.end());
+}
+
+Array BulletWorld::get_ghost_bodies() const {
+	Array result;
+	for (BulletGhostBody *ghost : ghosts) {
+		result.push_back(ghost);
+	}
+	return result;
+}
+
+int32_t BulletWorld::get_ghost_body_count() const {
+	return static_cast<int32_t>(ghosts.size());
 }

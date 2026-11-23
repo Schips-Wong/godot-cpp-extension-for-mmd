@@ -7,6 +7,7 @@
 
 #include "bullet/bullet_collision_shape.h"
 #include "bullet/bullet_constraint.h"
+#include "bullet/bullet_ghost_body.h"
 #include "bullet/bullet_rigid_body.h"
 #include "bullet/bullet_world.h"
 
@@ -37,6 +38,7 @@ void initialize_gdextension_types(ModuleInitializationLevel p_level) {
 	// Simulation.
 	GDREGISTER_CLASS(BulletWorld);
 	GDREGISTER_CLASS(BulletRigidBody);
+	GDREGISTER_CLASS(BulletGhostBody);
 
 	// Constraints.
 	GDREGISTER_ABSTRACT_CLASS(BulletConstraint);
