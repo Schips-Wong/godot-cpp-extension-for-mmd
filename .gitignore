@@ -49,4 +49,9 @@ compile_commands.json
 
 # Cmake
 cmake-build*
+/build-cmake*/
 CMakeUserPresets.json
+
+# Build output of the extension (keep the .gdextension descriptor)
+/project/bin/**
+!/project/bin/*.gdextension

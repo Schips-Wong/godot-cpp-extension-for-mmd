@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.25)
 if(CMAKE_C_COMPILER)
 endif()
 
-set(LIBNAME "EXTENSION-NAME") # "The name of the library"
+set(LIBNAME "bullet3") # "The name of the library"
 set(GODOT_PROJECT_DIR "project" CACHE STRING "The directory of a Godot project folder")
 
 # Make sure all the dependencies are satisfied
@@ -24,6 +24,10 @@ if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/godot-cpp/src")
         COMMAND_ERROR_IS_FATAL ANY
     )
 endif()
+
+# The bindings have to be generated against a known Godot API version first.
+set(GODOTCPP_API_VERSION "4.3" CACHE STRING "Godot API version used to generate the bindings")
+
 add_subdirectory(godot-cpp SYSTEM)
 
 # When compiling for emscripten, this toolchainhack needs to be included.
@@ -44,9 +48,18 @@ get_target_property(GODOTCPP_PLATFORM godot::cpp GODOTCPP_PLATFORM)
 # Now we can specify our own project which will inherit any global cmake properties or variables that have been defined.
 project(godot-cpp-template
     VERSION 1.0
-    DESCRIPTION "This repository serves as a quickstart template for GDExtension development with Godot 4.0+."
+    DESCRIPTION "Bullet 3 physics as a Godot 4 GDExtension."
     HOMEPAGE_URL "https://github.com/enetheru/godot-cpp-template/tree/main"
     LANGUAGES CXX
+)
+
+# Bullet 3 is compiled directly into the extension, so nothing extra has to be shipped.
+# Sources are compiled one by one (like Bullet's own CMake build): several files define
+# BT_USE_SSE_IN_API locally, which breaks the amalgamated translation units on MSVC.
+file(GLOB_RECURSE BULLET_SOURCES CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/thirdparty/bullet3/src/BulletCollision/*.cpp"
+    "${PROJECT_SOURCE_DIR}/thirdparty/bullet3/src/BulletDynamics/*.cpp"
+    "${PROJECT_SOURCE_DIR}/thirdparty/bullet3/src/LinearMath/*.cpp"
 )
 
 add_library(${LIBNAME} SHARED)
@@ -55,9 +68,30 @@ target_sources(${LIBNAME}
     PRIVATE
     src/register_types.cpp
     src/register_types.h
-    src/example_class.cpp
-    src/example_class.h
+    src/bullet/bullet_util.h
+    src/bullet/bullet_collision_shape.cpp
+    src/bullet/bullet_collision_shape.h
+    src/bullet/bullet_rigid_body.cpp
+    src/bullet/bullet_rigid_body.h
+    src/bullet/bullet_constraint.cpp
+    src/bullet/bullet_constraint.h
+    src/bullet/bullet_world.cpp
+    src/bullet/bullet_world.h
+    ${BULLET_SOURCES}
 )
+
+target_include_directories(${LIBNAME}
+    PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${PROJECT_SOURCE_DIR}/thirdparty/bullet3/src"
+)
+
+target_compile_definitions(${LIBNAME} PRIVATE _CRT_SECURE_NO_WARNINGS)
+
+# Bullet must use the same scalar precision as godot-cpp (real_t).
+if(GODOTCPP_PRECISION STREQUAL "double")
+    target_compile_definitions(${LIBNAME} PRIVATE BT_USE_DOUBLE_PRECISION)
+endif()
 
 # Fetch a list of the xml files to use for documentation and add to our target
 file(GLOB_RECURSE DOC_XML LIST_DIRECTORIES NO CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/doc_classes/*.xml")

@@ -10,6 +10,7 @@ config_version=5
 
 [application]
 
-config/name="godot cpp template"
+config/name="godot bullet3 gdextension"
+run/main_scene="res://bullet_demo.tscn"
 config/features=PackedStringArray("4.1", "Forward Plus")
 config/icon="res://icon.svg"
