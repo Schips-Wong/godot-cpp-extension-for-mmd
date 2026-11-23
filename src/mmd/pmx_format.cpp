@@ -78,11 +78,29 @@ public:
 		return value;
 	}
 
-	Vector2 v2() { return Vector2(f32(), f32()); }
+	// The components must be read in file order: passing several f32() calls directly as
+	// constructor arguments leaves their evaluation order unspecified, and MSVC evaluates
+	// right to left, which used to reverse every vector read with these helpers.
+	Vector2 v2() {
+		const float x = f32();
+		const float y = f32();
+		return Vector2(x, y);
+	}
 
-	Vector3 v3() { return Vector3(f32(), f32(), f32()); }
+	Vector3 v3() {
+		const float x = f32();
+		const float y = f32();
+		const float z = f32();
+		return Vector3(x, y, z);
+	}
 
-	Vector4 v4() { return Vector4(f32(), f32(), f32(), f32()); }
+	Vector4 v4() {
+		const float x = f32();
+		const float y = f32();
+		const float z = f32();
+		const float w = f32();
+		return Vector4(x, y, z, w);
+	}
 
 	// PMX is left handed: negate z (and x/y for rotations) to get Godot's space.
 	Vector3 v3_flip_z() {
