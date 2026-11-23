@@ -368,27 +368,37 @@ Error parse_pmx(const PackedByteArray &p_data, PmxModel &r_model) {
 		}
 	}
 
-	// --- Morphs (parsed and dropped) ---------------------------------------
+	// --- Morphs -------------------------------------------------------------
 	const int32_t morph_count = reader.i32();
 	if (morph_count < 0) {
 		return ERR_FILE_CORRUPT;
 	}
+	r_model.morphs.resize(static_cast<size_t>(morph_count));
 	for (int32_t i = 0; i < morph_count && reader.ok(); i++) {
-		reader.string_utf(utf8);
-		reader.string_utf(utf8);
-		reader.u8(); // panel
+		PmxMorph &morph = r_model.morphs[static_cast<size_t>(i)];
+		morph.name = reader.string_utf(utf8);
+		reader.string_utf(utf8); // name (english)
+		morph.panel = reader.u8();
 		const int32_t morph_type = reader.u8();
+		morph.type = morph_type;
 		const int32_t offset_count = reader.i32();
+		if (morph_type == 1 && offset_count > 0) {
+			morph.vertex_offsets.reserve(static_cast<size_t>(offset_count));
+		}
 		for (int32_t m = 0; m < offset_count && reader.ok(); m++) {
 			switch (morph_type) {
 				case 0: // group
 				case 9: { // flip (2.1)
-					reader.index_signed(globals.morph_index_size);
-					reader.f32();
+					(void)reader.index_signed(globals.morph_index_size);
+					(void)reader.f32();
 				} break;
 				case 1: { // vertex
-					reader.index_unsigned(globals.vertex_index_size);
-					reader.v3_flip_z();
+					const int32_t vertex_index = reader.index_unsigned(globals.vertex_index_size);
+					const Vector3 offset = reader.v3_flip_z();
+					PmxVertexMorphOffset vertex_offset;
+					vertex_offset.vertex = vertex_index;
+					vertex_offset.offset = offset;
+					morph.vertex_offsets.push_back(vertex_offset);
 				} break;
 				case 2: { // bone
 					reader.index_signed(globals.bone_index_size);

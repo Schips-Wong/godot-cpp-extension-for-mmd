@@ -27,9 +27,10 @@ func _ready() -> void:
 	if info.is_empty():
 		push_error("[pmx] cannot parse %s" % model_path)
 		return
-	print("[pmx] %s: vertices=%d indices=%d textures=%d materials=%d bones=%d rigid_bodies=%d joints=%d" % [
+	print("[pmx] %s: vertices=%d indices=%d textures=%d materials=%d bones=%d rigid_bodies=%d joints=%d morphs=%d vertex_morphs=%d" % [
 		info["name"], info["vertices"], info["indices"], info["textures"],
-		info["materials"], info["bones"], info["rigid_bodies"], info["joints"]])
+		info["materials"], info["bones"], info["rigid_bodies"], info["joints"],
+		info["morphs"], info["vertex_morphs"]])
 
 	# Prefer the resource produced by the editor import plugin, fall back to the builder.
 	var scene: PackedScene = ResourceLoader.load(model_path)
@@ -51,22 +52,38 @@ func _ready() -> void:
 
 	var surface_count := 0
 	var textured_surfaces := 0
+	var blend_shape_count := 0
+	var morph_names := ""
 	if mesh_instance != null and mesh_instance.mesh != null:
 		surface_count = mesh_instance.mesh.get_surface_count()
+		blend_shape_count = mesh_instance.mesh.get_blend_shape_count()
 		for surface in surface_count:
 			var surface_material := mesh_instance.mesh.surface_get_material(surface) as StandardMaterial3D
 			if surface_material != null and surface_material.albedo_texture != null:
 				textured_surfaces += 1
+		for index in mini(blend_shape_count, 5):
+			if index > 0:
+				morph_names += ", "
+			morph_names += mesh_instance.mesh.get_blend_shape_name(index)
 
-	print("[pmx] built (%s): bones=%d surfaces=%d textured=%d bodies=%d joints=%d skeleton=%s skin=%s" % [
+	print("[pmx] built (%s): bones=%d surfaces=%d textured=%d bodies=%d joints=%d blend_shapes=%d skeleton=%s skin=%s" % [
 		source,
 		_skeleton.get_bone_count() if _skeleton != null else -1,
 		surface_count,
 		textured_surfaces,
 		_physics.get_rigid_body_count() if _physics != null else -1,
 		_physics.get_constraint_count() if _physics != null else -1,
+		blend_shape_count,
 		_skeleton != null,
 		mesh_instance != null and mesh_instance.skin != null])
+	print("[pmx] morphs: %s%s" % [morph_names, " ..." if blend_shape_count > 5 else ""])
+	print("[pmx] morph metadata entries: %d" % (model.get_meta("pmx_morphs", []).size()))
+
+	# Drive the first morph to show the blend shapes are usable.
+	if mesh_instance != null and blend_shape_count > 0:
+		mesh_instance.set_blend_shape_value(0, 1.0)
+		print("[pmx] blend shape '%s' set to %.1f" % [
+			mesh_instance.mesh.get_blend_shape_name(0), mesh_instance.get_blend_shape_value(0)])
 
 	_add_camera_and_light()
 

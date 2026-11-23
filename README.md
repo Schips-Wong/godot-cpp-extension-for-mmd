@@ -157,6 +157,30 @@ if scene != null:
 	add_child(scene.instantiate())
 ```
 
+### Morphs
+
+PMX vertex morphs become mesh blend shapes, so they are driven with the stock Godot API:
+
+```gdscript
+var mesh_instance := model.get_node("Skeleton/Mesh") as MeshInstance3D
+mesh_instance.set_blend_shape_value(0, 1.0)                       # by index
+mesh_instance.set_blend_shape_value(mesh_instance.mesh.find_blend_shape_by_name("真面目"), 1.0)
+```
+
+PMX stores morph offsets as deltas while Godot's normalized blend shapes expect absolute vertex
+positions, so the importer writes `base + offset` per vertex and sets
+`Mesh::BLEND_SHAPE_MODE_NORMALIZED`. Blend shape arrays carry the normal channel too, because Godot
+requires the blend shape format to match the base surface for vertex/normal/tangent.
+
+The other morph types (group, bone, material, UV, flip, impulse) cannot be expressed as blend
+shapes. They are exported as node metadata on the model root so a VMD/animation layer can drive
+them later:
+
+```gdscript
+for entry in model.get_meta("pmx_morphs", []):
+	print(entry["name"], entry["type"], entry["panel"], entry["blend_shape"])  # blend_shape = -1 if not a blend shape
+```
+
 Details that differ from a naive implementation:
 
 * Positions and normals are converted to Godot's right handed space (`z` negated), rigid body and
@@ -234,7 +258,8 @@ match.
 
 * Concave `GImpact` shapes for moving meshes.
 * A `PhysicsServer3D` based back end (this extension only provides its own nodes).
-* VMD animation import, and PMX morphs / toon / sphere textures / IK.
+* VMD animation import, and the non-vertex PMX morph types (group / bone / material / UV).
+* Toon / sphere textures and IK.
 * PMX mode 2 (`物理演算+ボーン位置合わせ`) does not yet keep the animated bone position.
 * Runtime scaling of a model: scale at import time (the `scale` option) instead of scaling the
   skeleton node, because the Bullet bodies live in world space.

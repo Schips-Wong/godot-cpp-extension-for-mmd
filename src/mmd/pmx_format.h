@@ -80,6 +80,21 @@ struct PmxJoint {
 	Vector3 angular_spring;
 };
 
+struct PmxVertexMorphOffset {
+	int32_t vertex = 0;
+	Vector3 offset;
+};
+
+struct PmxMorph {
+	String name;
+	// 1 = eyebrow, 2 = eye, 3 = mouth, 4 = other.
+	int32_t panel = 0;
+	// PMX morph type: 0 group, 1 vertex, 2 bone, 3..7 uv, 8 material, 9 flip, 10 impulse.
+	int32_t type = 1;
+	// Only filled for type 1 (vertex) morphs, which become mesh blend shapes.
+	std::vector<PmxVertexMorphOffset> vertex_offsets;
+};
+
 struct PmxModel {
 	String name;
 	String name_en;
@@ -89,6 +104,7 @@ struct PmxModel {
 	std::vector<String> textures;
 	std::vector<PmxMaterial> materials;
 	std::vector<PmxBone> bones;
+	std::vector<PmxMorph> morphs;
 	std::vector<PmxRigidBody> rigid_bodies;
 	std::vector<PmxJoint> joints;
 };

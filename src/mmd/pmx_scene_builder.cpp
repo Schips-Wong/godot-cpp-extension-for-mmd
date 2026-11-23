@@ -177,6 +177,30 @@ Ref<PackedScene> PmxSceneBuilder::build_from_file(const String &p_path, float p_
 		skin->add_bind(i, bone_global[static_cast<size_t>(i)].affine_inverse());
 	}
 
+	// --- Blend shapes (PMX vertex morphs) ----------------------------------
+	// Every vertex morph becomes one blend shape. Group / bone / material morphs cannot be
+	// expressed as blend shapes; their names are exported as node metadata instead.
+	std::vector<const PmxMorph *> vertex_morphs;
+	std::vector<int32_t> morph_blend_index;
+	std::vector<String> morph_names;
+	morph_blend_index.reserve(model.morphs.size());
+
+	for (size_t i = 0; i < model.morphs.size(); i++) {
+		const PmxMorph &morph = model.morphs[i];
+		if (morph.type != 1 || morph.vertex_offsets.empty()) {
+			morph_blend_index.push_back(-1);
+			continue;
+		}
+		const String morph_name = make_unique(sanitize_name(morph.name, "Morph" + itos(static_cast<int64_t>(i))), morph_names);
+		morph_blend_index.push_back(static_cast<int32_t>(vertex_morphs.size()));
+		vertex_morphs.push_back(&morph);
+		mesh->add_blend_shape(morph_name);
+	}
+	if (!vertex_morphs.empty()) {
+		// PMX stores deltas, Godot's normalized blend shapes expect absolute vertex positions.
+		mesh->set_blend_shape_mode(Mesh::BLEND_SHAPE_MODE_NORMALIZED);
+	}
+
 	const int32_t material_count = static_cast<int32_t>(model.materials.size());
 	for (int32_t m = 0; m < material_count; m++) {
 		const PmxMaterial &material = model.materials[static_cast<size_t>(m)];
@@ -255,7 +279,44 @@ Ref<PackedScene> PmxSceneBuilder::build_from_file(const String &p_path, float p_
 		arrays[Mesh::ARRAY_WEIGHTS] = weights;
 		arrays[Mesh::ARRAY_INDEX] = surface_indices;
 
-		mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
+		TypedArray<Array> blend_shapes;
+		if (!vertex_morphs.empty()) {
+			blend_shapes.resize(static_cast<int64_t>(vertex_morphs.size()));
+			for (size_t m = 0; m < vertex_morphs.size(); m++) {
+				// The blend shape format has to match the main array format for vertex / normal /
+				// tangent, so normals are passed through untouched.
+				Array blend_array;
+				blend_array.resize(Mesh::ARRAY_MAX);
+				blend_array[Mesh::ARRAY_VERTEX] = positions;
+				blend_array[Mesh::ARRAY_NORMAL] = normals;
+
+				const PmxMorph *morph = vertex_morphs[m];
+				bool touched = false;
+				PackedVector3Array morphed = positions;
+				for (const PmxVertexMorphOffset &offset : morph->vertex_offsets) {
+					if (offset.vertex < 0 || offset.vertex >= vertex_count) {
+						continue;
+					}
+					const int32_t local = remap[static_cast<size_t>(offset.vertex)];
+					if (local < 0) {
+						continue;
+					}
+					morphed[static_cast<int64_t>(local)] = morphed[static_cast<int64_t>(local)] + offset.offset * scale;
+					touched = true;
+				}
+				if (touched) {
+					blend_array[Mesh::ARRAY_VERTEX] = morphed;
+				}
+				blend_shapes[static_cast<int64_t>(m)] = blend_array;
+			}
+		}
+
+		const int32_t surface_before = mesh->get_surface_count();
+		mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, blend_shapes);
+		if (mesh->get_surface_count() == surface_before) {
+			ERR_PRINT(vformat("PMX material '%s' produced an invalid surface and was skipped.", material.name));
+			continue;
+		}
 
 		Ref<StandardMaterial3D> surface_material;
 		surface_material.instantiate();
@@ -351,6 +412,22 @@ Ref<PackedScene> PmxSceneBuilder::build_from_file(const String &p_path, float p_
 		}
 	}
 
+	// Morph metadata: keeps group / bone / material morphs discoverable for higher level code
+	// (VMD animation, UI sliders), even though only vertex morphs become blend shapes.
+	if (!model.morphs.empty()) {
+		Array morph_meta;
+		for (size_t i = 0; i < model.morphs.size(); i++) {
+			const PmxMorph &morph = model.morphs[i];
+			Dictionary entry;
+			entry["name"] = morph.name;
+			entry["type"] = morph.type;
+			entry["panel"] = morph.panel;
+			entry["blend_shape"] = morph_blend_index[i];
+			morph_meta.push_back(entry);
+		}
+		root->set_meta("pmx_morphs", morph_meta);
+	}
+
 	Ref<PackedScene> scene;
 	scene.instantiate();
 	const Error pack_error = scene->pack(root);
@@ -396,5 +473,17 @@ Dictionary PmxSceneBuilder::inspect_file(const String &p_path) {
 		texture_paths.push_back(texture);
 	}
 	result["texture_paths"] = texture_paths;
+
+	int64_t vertex_morphs = 0;
+	PackedStringArray vertex_morph_names;
+	for (const PmxMorph &morph : model.morphs) {
+		if (morph.type == 1 && !morph.vertex_offsets.empty()) {
+			vertex_morphs++;
+			vertex_morph_names.push_back(morph.name);
+		}
+	}
+	result["morphs"] = static_cast<int64_t>(model.morphs.size());
+	result["vertex_morphs"] = vertex_morphs;
+	result["vertex_morph_names"] = vertex_morph_names;
 	return result;
 }

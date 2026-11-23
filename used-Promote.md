@@ -26,3 +26,7 @@
 ### d
 
 你有没有实现` PMX 解析 + 节点自动生成做成 EditorImportPlugin（一次性打通整条链路）`，如果没有就继续完成
+
+### e
+
+实现`变形（blend shape）`
