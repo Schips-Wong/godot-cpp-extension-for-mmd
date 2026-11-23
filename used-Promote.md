@@ -22,3 +22,7 @@
 ### c
 
 先补 btGhostObject/凸体扫掠，让 MMD 模型与地面/场景碰撞查询更完整。
+
+### d
+
+你有没有实现` PMX 解析 + 节点自动生成做成 EditorImportPlugin（一次性打通整条链路）`，如果没有就继续完成

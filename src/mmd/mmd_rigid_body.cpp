@@ -112,6 +112,10 @@ bool MMDRigidBody::_ensure_bone() const {
 	if (skeleton != nullptr && resolved_bone >= 0) {
 		return true;
 	}
+	if (bone_index < 0 && bone_name.is_empty()) {
+		// PMX allows rigid bodies without a bone: they simply follow their own node transform.
+		return false;
+	}
 
 	MMDPhysicsWorld *physics_world = _find_mmd_world();
 	if (physics_world != nullptr) {

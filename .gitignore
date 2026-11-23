@@ -1,11 +1,11 @@
 # Godot auto generated files
 *.gen.*
 .godot/
-
+*.uid
 # Ignore library files but not the gdextension file
 /bin/**
 !project/bin/*.gdextension
-
+project/models
 # Ignore scons database
 .sconsign*.dblite
 

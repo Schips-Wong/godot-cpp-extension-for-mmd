@@ -126,6 +126,60 @@ bone heights plus a downward `convex_sweep()` distance to a static ground body (
 ground's collision layer). `project/bullet_demo.tscn` shows the generic API, including a
 `BulletGhostBody` sensor that slides through the box stack and a convex sweep.
 
+## PMX import
+
+`.pmx` files are imported as `PackedScene` by `PmxImporter` (an `EditorImportPlugin` written in
+C++). The generated scene is:
+
+```
+Node3D (model name)
+  Skeleton3D (bones + rest poses)
+    MeshInstance3D (ArrayMesh + Skin, one surface per PMX material)
+  MMDPhysicsWorld (skeleton = ../Skeleton)
+    MMDRigidBody x N (bone_name bound, PMX mode/shape/mass/damping/group/mask)
+    MMDJoint x N (body_a / body_b, limits, PMX springs)
+```
+
+Import options: `scale` (uniform, applies to the mesh, bones and physics) and `import_physics`.
+
+Because `EditorPlugins::add_import_plugin()` is not exposed to GDExtension, a 12 line editor plugin
+(`project/addons/pmx_import/plugin.gd`) calls `add_import_plugin(PmxImporter.new())`. It is enabled
+in `project/project.godot`; keep that entry (or re-enable the plugin) in your own project.
+
+`PmxSceneBuilder` is the same conversion exposed to scripts, which is handy for runtime loading or
+for tools:
+
+```gdscript
+var builder := PmxSceneBuilder.new()
+print(builder.inspect_file("res://models/model.pmx")) # counts / bone names, no scene built
+var scene := builder.build_from_file("res://models/model.pmx", 0.08, true)
+if scene != null:
+	add_child(scene.instantiate())
+```
+
+Details that differ from a naive implementation:
+
+* Positions and normals are converted to Godot's right handed space (`z` negated), rigid body and
+  joint rotations have `x`/`y` negated, and node euler order is Godot's default `YXZ`, which is
+  what MMD uses.
+* PMX stores the groups a body does **not** collide with; `group_mask` is the inverted 16 bit mask
+  handed to Bullet.
+* `BDEF1/2/4` and `QDEF` become 4 bone weights (normalised); `SDEF` is imported as `BDEF2` (the
+  spherical correction is dropped).
+* Vertices are remapped per material, so each surface only carries the vertices it uses.
+
+Textures are referenced as imported resources (`ResourceLoader.load()`); the importer first calls
+`append_import_external_resource()` for every referenced file, and if a texture is still missing
+from the import cache (first pass) the image is embedded in the scene instead, so a freshly
+imported model is never untextured.
+
+Not imported yet: morphs (blend shapes), toon/sphere textures, display frames, IK, and VMD
+animations.
+
+`project/pmx_demo.tscn` loads `res://models/托特.pmx` (a 498 bone / 376 body / 625 joint model from
+the reference project), prefers the imported scene and reports the live physics state. Delete
+`project/models/` if you do not want the sample assets.
+
 ## Usage
 
 ```gdscript
@@ -180,6 +234,7 @@ match.
 
 * Concave `GImpact` shapes for moving meshes.
 * A `PhysicsServer3D` based back end (this extension only provides its own nodes).
-* PMX / VMD parsing: the MMD layer expects already imported bones and node transforms.
+* VMD animation import, and PMX morphs / toon / sphere textures / IK.
 * PMX mode 2 (`物理演算+ボーン位置合わせ`) does not yet keep the animated bone position.
-* Scaled model nodes: bodies live in world space, so the skeleton should keep a unit scale.
+* Runtime scaling of a model: scale at import time (the `scale` option) instead of scaling the
+  skeleton node, because the Bullet bodies live in world space.

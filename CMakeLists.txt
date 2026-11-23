@@ -85,6 +85,12 @@ target_sources(${LIBNAME}
     src/mmd/mmd_rigid_body.h
     src/mmd/mmd_joint.cpp
     src/mmd/mmd_joint.h
+    src/mmd/pmx_format.cpp
+    src/mmd/pmx_format.h
+    src/mmd/pmx_scene_builder.cpp
+    src/mmd/pmx_scene_builder.h
+    src/mmd/pmx_importer.cpp
+    src/mmd/pmx_importer.h
     ${BULLET_SOURCES}
 )
 
