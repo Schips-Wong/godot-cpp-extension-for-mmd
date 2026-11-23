@@ -7,6 +7,7 @@
 #include "godot_cpp/variant/color.hpp"
 #include "godot_cpp/variant/packed_byte_array.hpp"
 #include "godot_cpp/variant/packed_int32_array.hpp"
+#include "godot_cpp/variant/quaternion.hpp"
 #include "godot_cpp/variant/string.hpp"
 #include "godot_cpp/variant/vector2.hpp"
 #include "godot_cpp/variant/vector3.hpp"
@@ -42,10 +43,28 @@ struct PmxMaterial {
 	int32_t index_count = 0;
 };
 
+struct PmxIkLink {
+	int32_t bone = -1;
+	bool limited = false;
+	Vector3 limit_min;
+	Vector3 limit_max;
+};
+
 struct PmxBone {
 	String name;
 	Vector3 position;
 	int32_t parent = -1;
+	// Append (inherit) bone: the source transform is added to this bone every frame.
+	int32_t inherit_bone = -1;
+	bool inherit_rotation = false;
+	bool inherit_translation = false;
+	float inherit_ratio = 1.0f;
+	// IK: the target is the tip bone the chain should reach.
+	bool has_ik = false;
+	int32_t ik_target = -1;
+	int32_t ik_loop = 0;
+	float ik_angle_limit = 0.0f;
+	std::vector<PmxIkLink> ik_links;
 };
 
 struct PmxRigidBody {
@@ -85,6 +104,17 @@ struct PmxVertexMorphOffset {
 	Vector3 offset;
 };
 
+struct PmxBoneMorphOffset {
+	int32_t bone = 0;
+	Vector3 translation;
+	Quaternion rotation;
+};
+
+struct PmxGroupMorphOffset {
+	int32_t morph = 0;
+	float rate = 0.0f;
+};
+
 struct PmxMorph {
 	String name;
 	// 1 = eyebrow, 2 = eye, 3 = mouth, 4 = other.
@@ -93,6 +123,9 @@ struct PmxMorph {
 	int32_t type = 1;
 	// Only filled for type 1 (vertex) morphs, which become mesh blend shapes.
 	std::vector<PmxVertexMorphOffset> vertex_offsets;
+	// Filled for type 2 (bone) and type 0 / 9 (group / flip) morphs.
+	std::vector<PmxBoneMorphOffset> bone_offsets;
+	std::vector<PmxGroupMorphOffset> group_offsets;
 };
 
 struct PmxModel {

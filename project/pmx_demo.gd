@@ -7,9 +7,12 @@ extends Node3D
 
 const MODEL_PATH := "res://models/test/时崎狂三·是吗？/终.pmx"
 const MODEL_SCALE := 0.1
+const VMD_PATH := "res://models/test/ankha_by_月羡花_2c198da050f05a77ec964a1e18c3ee3a.vmd"
 
 var _skeleton: Skeleton3D
 var _physics: MMDPhysicsWorld
+var _mesh: MeshInstance3D
+var _player: MMDAnimationPlayer
 var _report_timer := 0.0
 var _reports := 0
 
@@ -48,6 +51,7 @@ func _ready() -> void:
 
 	_skeleton = model.get_node_or_null("Skeleton") as Skeleton3D
 	var mesh_instance := model.get_node_or_null("Skeleton/Mesh") as MeshInstance3D
+	_mesh = mesh_instance
 	_physics = model.get_node_or_null("Physics") as MMDPhysicsWorld
 
 	var surface_count := 0
@@ -92,7 +96,27 @@ func _ready() -> void:
 		print("[pmx] blend shape '%s' set to %.1f" % [
 			mesh_instance.mesh.get_blend_shape_name(0), mesh_instance.get_blend_shape_value(0)])
 
+	_setup_vmd_player(model)
 	_add_camera_and_light()
+
+
+func _setup_vmd_player(model: Node) -> void:
+	_player = MMDAnimationPlayer.new()
+	_player.name = "VMDPlayer"
+	_player.skeleton = NodePath("../Skeleton")
+	_player.physics = NodePath("../Physics")
+	_player.mesh = NodePath("../Skeleton/Mesh")
+	model.add_child(_player)
+
+	# load_vmd parses the file directly, so this also works before the editor import cache exists.
+	var vmd_error := _player.load_vmd(VMD_PATH)
+	if vmd_error != OK:
+		push_warning("[vmd] cannot load %s (error %d)" % [VMD_PATH, vmd_error])
+		return
+	print("[vmd] %s: duration=%.2fs animated_bones=%d/%d morph_tracks=%d ik=%d" % [
+		_player.get_vmd_model_name(), _player.get_duration(),
+		_player.get_animated_bone_count(), _skeleton.get_bone_count() if _skeleton != null else -1,
+		_player.get_morph_track_count(), _player.get_ik_count()])
 
 
 func _add_camera_and_light() -> void:
@@ -120,7 +144,9 @@ func _physics_process(delta: float) -> void:
 	var last_bone := _skeleton.get_bone_count() - 1
 	var pose := _skeleton.get_bone_global_pose(last_bone)
 	var finite := not (is_nan(pose.origin.x) or is_nan(pose.origin.y) or is_nan(pose.origin.z))
-	print("[pmx] t=%.1fs bodies=%d last_bone(%s)=(%.3f, %.3f, %.3f) finite=%s" % [
+	var vmd_time := _player.get_time() if _player != null else -1.0
+	var morph_value := _mesh.get_blend_shape_value(0) if _mesh != null and _mesh.mesh != null and _mesh.mesh.get_blend_shape_count() > 0 else 0.0
+	print("[pmx] t=%.1fs bodies=%d last_bone(%s)=(%.3f, %.3f, %.3f) finite=%s vmd_t=%.2f morph0=%.2f" % [
 		_reports, _physics.get_rigid_body_count() if _physics != null else -1,
 		_skeleton.get_bone_name(last_bone),
-		pose.origin.x, pose.origin.y, pose.origin.z, finite])
+		pose.origin.x, pose.origin.y, pose.origin.z, finite, vmd_time, morph_value])

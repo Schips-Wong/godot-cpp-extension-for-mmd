@@ -102,6 +102,15 @@ public:
 		return Vector4(x, y, z, w);
 	}
 
+	// PMX rotations use the same left handed convention as rigid bodies / joints.
+	Quaternion q_flip_xy() {
+		const float x = f32();
+		const float y = f32();
+		const float z = f32();
+		const float w = f32();
+		return Quaternion(-x, -y, z, w);
+	}
+
 	// PMX is left handed: negate z (and x/y for rotations) to get Godot's space.
 	Vector3 v3_flip_z() {
 		const float x = f32();
@@ -358,8 +367,10 @@ Error parse_pmx(const PackedByteArray &p_data, PmxModel &r_model) {
 			reader.v3_flip_z(); // tail offset
 		}
 		if ((flags & (0x0100 | 0x0200)) != 0) { // inherit rotation / translation
-			reader.index_signed(globals.bone_index_size);
-			reader.f32();
+			bone.inherit_bone = reader.index_signed(globals.bone_index_size);
+			bone.inherit_ratio = reader.f32();
+			bone.inherit_rotation = (flags & 0x0100) != 0;
+			bone.inherit_translation = (flags & 0x0200) != 0;
 		}
 		if ((flags & 0x0400) != 0) { // fixed axis
 			reader.v3();
@@ -372,15 +383,26 @@ Error parse_pmx(const PackedByteArray &p_data, PmxModel &r_model) {
 			reader.i32();
 		}
 		if ((flags & 0x0020) != 0) { // IK
-			reader.index_signed(globals.bone_index_size); // target
-			reader.i32(); // loop count
-			reader.f32(); // angle limit
+			bone.has_ik = true;
+			bone.ik_target = reader.index_signed(globals.bone_index_size);
+			bone.ik_loop = reader.i32();
+			bone.ik_angle_limit = reader.f32();
 			const int32_t link_count = reader.i32();
+			if (link_count < 0) {
+				return ERR_FILE_CORRUPT;
+			}
+			bone.ik_links.resize(static_cast<size_t>(link_count));
 			for (int32_t link = 0; link < link_count && reader.ok(); link++) {
-				reader.index_signed(globals.bone_index_size);
-				if (reader.u8() != 0) {
-					reader.v3();
-					reader.v3();
+				PmxIkLink &ik_link = bone.ik_links[static_cast<size_t>(link)];
+				ik_link.bone = reader.index_signed(globals.bone_index_size);
+				ik_link.limited = reader.u8() != 0;
+				if (ik_link.limited) {
+					// The reference negates x / y while reading, then swaps min / max so the
+					// per axis limits stay a lower bound and an upper bound in Godot's space.
+					const Vector3 raw_min = reader.v3_flip_xy();
+					const Vector3 raw_max = reader.v3_flip_xy();
+					ik_link.limit_min = Vector3(raw_max.x, raw_max.y, raw_min.z);
+					ik_link.limit_max = Vector3(raw_min.x, raw_min.y, raw_max.z);
 				}
 			}
 		}
@@ -407,8 +429,10 @@ Error parse_pmx(const PackedByteArray &p_data, PmxModel &r_model) {
 			switch (morph_type) {
 				case 0: // group
 				case 9: { // flip (2.1)
-					(void)reader.index_signed(globals.morph_index_size);
-					(void)reader.f32();
+					PmxGroupMorphOffset group_offset;
+					group_offset.morph = reader.index_signed(globals.morph_index_size);
+					group_offset.rate = reader.f32();
+					morph.group_offsets.push_back(group_offset);
 				} break;
 				case 1: { // vertex
 					const int32_t vertex_index = reader.index_unsigned(globals.vertex_index_size);
@@ -419,9 +443,11 @@ Error parse_pmx(const PackedByteArray &p_data, PmxModel &r_model) {
 					morph.vertex_offsets.push_back(vertex_offset);
 				} break;
 				case 2: { // bone
-					reader.index_signed(globals.bone_index_size);
-					reader.v3_flip_z();
-					reader.v4();
+					PmxBoneMorphOffset bone_offset;
+					bone_offset.bone = reader.index_signed(globals.bone_index_size);
+					bone_offset.translation = reader.v3_flip_z();
+					bone_offset.rotation = reader.q_flip_xy();
+					morph.bone_offsets.push_back(bone_offset);
 				} break;
 				case 3: case 4: case 5: case 6: case 7: { // uv / extra uv
 					reader.index_unsigned(globals.vertex_index_size);

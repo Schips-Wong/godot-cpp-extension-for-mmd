@@ -11,11 +11,14 @@
 #include "bullet/bullet_rigid_body.h"
 #include "bullet/bullet_world.h"
 
+#include "mmd/mmd_animation.h"
+#include "mmd/mmd_animation_player.h"
 #include "mmd/mmd_joint.h"
 #include "mmd/mmd_physics_world.h"
 #include "mmd/mmd_rigid_body.h"
 #include "mmd/pmx_importer.h"
 #include "mmd/pmx_scene_builder.h"
+#include "mmd/vmd_importer.h"
 
 using namespace godot;
 
@@ -56,12 +59,17 @@ void initialize_gdextension_types(ModuleInitializationLevel p_level) {
 
 		// PMX -> scene conversion (also used by the editor import plugin).
 		GDREGISTER_CLASS(PmxSceneBuilder);
+
+		// VMD motion playback.
+		GDREGISTER_CLASS(MMDAnimation);
+		GDREGISTER_CLASS(MMDAnimationPlayer);
 	}
 
 	// Editor only: the import plugin is registered by project/addons/pmx_import via
 	// EditorPlugin::add_import_plugin().
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
 		GDREGISTER_CLASS(PmxImporter);
+		GDREGISTER_CLASS(VmdImporter);
 	}
 }
 

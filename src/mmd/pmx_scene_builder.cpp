@@ -132,6 +132,9 @@ Ref<PackedScene> PmxSceneBuilder::build_from_file(const String &p_path, float p_
 	// --- Root + skeleton ---------------------------------------------------
 	Node3D *root = memnew(Node3D);
 	root->set_name(sanitize_name(model.name, "PMXModel"));
+	// VMD motion translations are authored in MMD units, so the player has to scale them the
+	// same way the geometry was scaled (the reference stores the same meta on its model root).
+	root->set_meta("model_scale", scale);
 
 	Skeleton3D *skeleton = memnew(Skeleton3D);
 	skeleton->set_name("Skeleton");
@@ -427,9 +430,80 @@ Ref<PackedScene> PmxSceneBuilder::build_from_file(const String &p_path, float p_
 			entry["type"] = morph.type;
 			entry["panel"] = morph.panel;
 			entry["blend_shape"] = morph_blend_index[i];
+
+			if (!morph.bone_offsets.empty()) {
+				Array bone_offsets;
+				for (const PmxBoneMorphOffset &offset : morph.bone_offsets) {
+					Dictionary bone_entry;
+					bone_entry["bone"] = offset.bone;
+					// PMX morph translations are lengths, the reference scales them with the model.
+					bone_entry["translation"] = offset.translation * scale;
+					bone_entry["rotation"] = offset.rotation;
+					bone_offsets.push_back(bone_entry);
+				}
+				entry["bones"] = bone_offsets;
+			}
+			if (!morph.group_offsets.empty()) {
+				Array group_offsets;
+				for (const PmxGroupMorphOffset &offset : morph.group_offsets) {
+					Dictionary group_entry;
+					group_entry["morph"] = offset.morph;
+					group_entry["rate"] = offset.rate;
+					group_offsets.push_back(group_entry);
+				}
+				entry["groups"] = group_offsets;
+			}
+
 			morph_meta.push_back(entry);
 		}
 		root->set_meta("pmx_morphs", morph_meta);
+	}
+
+	// IK and append (inherit) bone metadata, consumed by MMDAnimationPlayer. Indices are PMX
+	// indices, which match the skeleton bone order.
+	Array ik_meta;
+	for (size_t i = 0; i < model.bones.size(); i++) {
+		const PmxBone &bone = model.bones[i];
+		if (!bone.has_ik) {
+			continue;
+		}
+		Dictionary entry;
+		entry["bone"] = static_cast<int32_t>(i);
+		entry["target"] = bone.ik_target;
+		entry["loop"] = bone.ik_loop;
+		entry["angle_limit"] = bone.ik_angle_limit;
+		Array links;
+		for (const PmxIkLink &link : bone.ik_links) {
+			Dictionary link_entry;
+			link_entry["index"] = link.bone;
+			link_entry["limited"] = link.limited;
+			link_entry["min"] = link.limit_min;
+			link_entry["max"] = link.limit_max;
+			links.push_back(link_entry);
+		}
+		entry["links"] = links;
+		ik_meta.push_back(entry);
+	}
+	if (!ik_meta.is_empty()) {
+		root->set_meta("pmx_ik_bones", ik_meta);
+	}
+
+	Array append_meta;
+	for (size_t i = 0; i < model.bones.size(); i++) {
+		const PmxBone &bone = model.bones[i];
+		if (bone.inherit_bone < 0 || (!bone.inherit_rotation && !bone.inherit_translation)) {
+			continue;
+		}
+		Dictionary entry;
+		entry["bone"] = static_cast<int32_t>(i);
+		entry["source"] = bone.inherit_bone;
+		entry["rotate"] = bone.inherit_rotation;
+		entry["translate"] = bone.inherit_translation;
+		entry["ratio"] = bone.inherit_ratio;
+		append_meta.push_back(entry);
+	}
+	if (!append_meta.is_empty()) {
+		root->set_meta("pmx_append_bones", append_meta);
 	}
 
 	Ref<PackedScene> scene;
