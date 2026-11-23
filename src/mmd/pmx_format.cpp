@@ -320,10 +320,19 @@ Error parse_pmx(const PackedByteArray &p_data, PmxModel &r_model) {
 		PmxMaterial &material = r_model.materials[static_cast<size_t>(i)];
 		material.name = reader.string_utf(utf8);
 		reader.string_utf(utf8); // name (english)
-		material.diffuse = Color(reader.f32(), reader.f32(), reader.f32(), reader.f32());
+		// Read the components in file order: MSVC evaluates constructor arguments right to
+		// left, which would swap the red and alpha channels of these colours.
+		const float diffuse_r = reader.f32();
+		const float diffuse_g = reader.f32();
+		const float diffuse_b = reader.f32();
+		const float diffuse_a = reader.f32();
+		material.diffuse = Color(diffuse_r, diffuse_g, diffuse_b, diffuse_a);
 		reader.v3(); // specular colour
 		material.specularity = reader.f32();
-		material.ambient = Color(reader.f32(), reader.f32(), reader.f32(), 1.0f);
+		const float ambient_r = reader.f32();
+		const float ambient_g = reader.f32();
+		const float ambient_b = reader.f32();
+		material.ambient = Color(ambient_r, ambient_g, ambient_b, 1.0f);
 
 		const int32_t draw_flags = reader.u8();
 		material.double_sided = (draw_flags & 0x01) != 0;

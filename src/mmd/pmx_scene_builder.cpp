@@ -324,15 +324,22 @@ Ref<PackedScene> PmxSceneBuilder::build_from_file(const String &p_path, float p_
 		Ref<StandardMaterial3D> surface_material;
 		surface_material.instantiate();
 		surface_material->set_albedo(material.diffuse);
-		surface_material->set_roughness(CLAMP(1.0f - material.specularity, 0.0f, 1.0f));
 		if (material.double_sided) {
 			surface_material->set_cull_mode(BaseMaterial3D::CULL_DISABLED);
 		}
+		// MMD blends the texture with the material alpha, so enable the alpha pipeline whenever
+		// the material alpha or the texture alpha is actually used.
+		bool transparent = material.diffuse.a < 0.999f;
 		if (material.texture_index >= 0 && material.texture_index < static_cast<int32_t>(model.textures.size())) {
 			const Ref<Texture2D> texture = load_texture(p_path, model.textures[static_cast<size_t>(material.texture_index)]);
 			if (texture.is_valid()) {
 				surface_material->set_texture(BaseMaterial3D::TEXTURE_ALBEDO, texture);
+				const Ref<Image> image = texture->get_image();
+				transparent = transparent || (image.is_valid() && image->detect_alpha() != Image::ALPHA_NONE);
 			}
+		}
+		if (transparent) {
+			surface_material->set_transparency(BaseMaterial3D::TRANSPARENCY_ALPHA);
 		}
 		mesh->surface_set_material(mesh->get_surface_count() - 1, surface_material);
 	}
