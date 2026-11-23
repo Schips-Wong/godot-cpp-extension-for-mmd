@@ -23,14 +23,14 @@ MMDJoint::MMDJoint() = default;
 void MMDJoint::_apply_springs() {
 	for (int32_t axis = 0; axis < 3; axis++) {
 		const float linear_stiffness = linear_spring[axis];
-		if (linear_stiffness > 0.0f) {
+		if (linear_stiffness != 0.0f) {
 			configure_spring(axis, linear_stiffness, spring_damping);
 		} else {
 			set_spring_enabled(axis, false);
 		}
 
 		const float angular_stiffness = angular_spring[axis];
-		if (angular_stiffness > 0.0f) {
+		if (angular_stiffness != 0.0f) {
 			configure_spring(3 + axis, angular_stiffness, spring_damping);
 		} else {
 			set_spring_enabled(3 + axis, false);

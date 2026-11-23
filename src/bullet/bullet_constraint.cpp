@@ -734,7 +734,8 @@ void BulletGeneric6DofSpringConstraint::_apply_parameters() {
 		}
 		spring->setStiffness(axis, static_cast<btScalar>(spring_stiffness[axis]));
 		spring->setDamping(axis, static_cast<btScalar>(spring_damping[axis]));
-		spring->setEquilibriumPoint(axis);
+		// The reference importer never calls setEquilibriumPoint(), so Bullet's default
+		// equilibrium (0 in the constraint frame) is what MMD depends on.
 	}
 }
 

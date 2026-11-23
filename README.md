@@ -91,9 +91,10 @@ the generic classes above. Bones are driven directly on a `Skeleton3D`.
 * `BONE_PHYSICS_WITH_BONE_OFFSET` (2) – currently identical to 1, matching the reference
   GodotMMD implementation.
 
-`bone_offset` is the body frame expressed in bone space (`body = bone_offset * bone`). It is
-derived automatically on the first simulation step from the node transform and the bone pose,
-which is why an importer only has to place `MMDRigidBody` nodes at the PMX rigid body transform.
+`bone_offset` is the body frame expressed in bone space (`body = bone * bone_offset`, i.e.
+`bone_offset = bone_rest^-1 * body_rest`). It is derived automatically on the first simulation
+step from the rest pose, which is why an importer only has to place `MMDRigidBody` nodes at the
+PMX rigid body transform.
 A body never falls asleep (sleeping thresholds are 0), so bones cannot freeze mid animation.
 
 ```gdscript
@@ -140,7 +141,9 @@ Node3D (model name)
     MMDJoint x N (body_a / body_b, limits, PMX springs)
 ```
 
-Import options: `scale` (uniform, applies to the mesh, bones and physics) and `import_physics`.
+Import options: `scale` (uniform, applies to the mesh, bones and physics; the default is `0.1`,
+matching the reference GodotMMD importer and the unit range its PMX masses/springs are tuned for)
+and `import_physics`.
 
 Because `EditorPlugins::add_import_plugin()` is not exposed to GDExtension, a 12 line editor plugin
 (`project/addons/pmx_import/plugin.gd`) calls `add_import_plugin(PmxImporter.new())`. It is enabled
@@ -152,7 +155,7 @@ for tools:
 ```gdscript
 var builder := PmxSceneBuilder.new()
 print(builder.inspect_file("res://models/model.pmx")) # counts / bone names, no scene built
-var scene := builder.build_from_file("res://models/model.pmx", 0.08, true)
+var scene := builder.build_from_file("res://models/model.pmx", 0.1, true)
 if scene != null:
 	add_child(scene.instantiate())
 ```
@@ -186,8 +189,8 @@ Details that differ from a naive implementation:
 * Positions and normals are converted to Godot's right handed space (`z` negated), rigid body and
   joint rotations have `x`/`y` negated, and node euler order is Godot's default `YXZ`, which is
   what MMD uses.
-* PMX stores the groups a body does **not** collide with; `group_mask` is the inverted 16 bit mask
-  handed to Bullet.
+* The 16 bit PMX collision field is handed to Bullet unchanged as `collision_mask` (and
+  `1 << group` as the collision layer), matching what the reference importer does.
 * `BDEF1/2/4` and `QDEF` become 4 bone weights (normalised); `SDEF` is imported as `BDEF2` (the
   spherical correction is dropped).
 * Vertices are remapped per material, so each surface only carries the vertices it uses.

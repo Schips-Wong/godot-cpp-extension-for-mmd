@@ -28,7 +28,7 @@ protected:
 
 public:
 	// Returns an empty (invalid) PackedScene when the file cannot be parsed.
-	Ref<PackedScene> build_from_file(const String &p_path, float p_scale = 1.0f, bool p_create_physics = true);
+	Ref<PackedScene> build_from_file(const String &p_path, float p_scale = 0.1f, bool p_create_physics = true);
 	// Parses only, returning the model summary (useful for tools and tests).
 	Dictionary inspect_file(const String &p_path);
 };

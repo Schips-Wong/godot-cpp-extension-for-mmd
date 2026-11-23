@@ -52,8 +52,8 @@ struct PmxRigidBody {
 	String name;
 	int32_t bone = -1;
 	int32_t group = 0;
-	// PMX stores "groups this body does NOT collide with".
-	int32_t non_collision_mask = 0;
+	// 16 bit mask of the groups this body collides with (used directly by Bullet).
+	int32_t collision_mask = 0;
 	int32_t shape = 1; // 0 sphere, 1 box, 2 capsule
 	Vector3 size = Vector3(0.5, 0.5, 0.5);
 	Vector3 position;

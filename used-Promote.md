@@ -30,3 +30,7 @@
 ### e
 
 实现`变形（blend shape）`
+
+### f
+
+实际测试我发现物理效果很糟糕。严格对齐`D:\tmp\mmd\ref\GodotMMD 1.24-godot-4-c#`的效果

@@ -20,7 +20,10 @@ void MMDPhysicsWorld::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "simulation_enabled"), "set_simulation_enabled", "is_simulation_enabled");
 }
 
-MMDPhysicsWorld::MMDPhysicsWorld() = default;
+MMDPhysicsWorld::MMDPhysicsWorld() {
+	// The reference MMDBulletWorld uses 9.81 m/s^2.
+	set_gravity(Vector3(0.0, -9.81, 0.0));
+}
 
 void MMDPhysicsWorld::_ready() {
 	BulletWorld::_ready();

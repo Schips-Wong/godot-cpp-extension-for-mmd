@@ -59,6 +59,7 @@ protected:
 	bool _ensure_bone() const;
 	void _ensure_bone_offset();
 	Transform3D _get_bone_world_pose() const;
+	Transform3D _get_bone_rest_world_pose() const;
 	void _update_shape_from_mmd();
 	void _apply_bone_mode();
 	void _apply_mmd_settings();

@@ -5,8 +5,8 @@ extends Node3D
 ## The scene comes from the editor import plugin (PmxImporter -> bullet3.pmx) when the model has
 ## already been imported, and from PmxSceneBuilder otherwise.
 
-const MODEL_PATH := "res://models/托特.pmx"
-const MODEL_SCALE := 1.0
+const MODEL_PATH := "res://models/test/时崎狂三·是吗？/终.pmx"
+const MODEL_SCALE := 0.1
 
 var _skeleton: Skeleton3D
 var _physics: MMDPhysicsWorld
@@ -76,6 +76,13 @@ func _ready() -> void:
 		blend_shape_count,
 		_skeleton != null,
 		mesh_instance != null and mesh_instance.skin != null])
+	if _physics != null:
+		var masks := {}
+		for child in _physics.get_children():
+			if child is MMDRigidBody:
+				masks[child.collision_mask] = masks.get(child.collision_mask, 0) + 1
+		print("[debug] collision mask histogram: ", masks)
+
 	print("[pmx] morphs: %s%s" % [morph_names, " ..." if blend_shape_count > 5 else ""])
 	print("[pmx] morph metadata entries: %d" % (model.get_meta("pmx_morphs", []).size()))
 
@@ -91,7 +98,7 @@ func _ready() -> void:
 func _add_camera_and_light() -> void:
 	var camera := Camera3D.new()
 	add_child(camera)
-	camera.look_at_from_position(Vector3(4.0, 8.0, 14.0), Vector3(0, 7.0, 0))
+	camera.look_at_from_position(Vector3(0.4, 0.8, 1.4), Vector3(0, 0.7, 0))
 
 	var light := DirectionalLight3D.new()
 	light.rotation_degrees = Vector3(-45, -30, 0)

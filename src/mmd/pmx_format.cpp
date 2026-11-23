@@ -466,7 +466,7 @@ Error parse_pmx(const PackedByteArray &p_data, PmxModel &r_model) {
 		reader.string_utf(utf8); // name (english)
 		body.bone = reader.index_signed(globals.bone_index_size);
 		body.group = reader.u8();
-		body.non_collision_mask = static_cast<int32_t>(reader.u16());
+		body.collision_mask = static_cast<int32_t>(reader.u16());
 		body.shape = reader.u8();
 		body.size = reader.v3();
 		body.position = reader.v3_flip_z();

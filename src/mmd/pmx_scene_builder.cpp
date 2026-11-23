@@ -127,7 +127,7 @@ Ref<PackedScene> PmxSceneBuilder::build_from_file(const String &p_path, float p_
 		return result;
 	}
 
-	const float scale = p_scale > 0.0f ? p_scale : 1.0f;
+	const float scale = p_scale > 0.0f ? p_scale : 0.1f;
 
 	// --- Root + skeleton ---------------------------------------------------
 	Node3D *root = memnew(Node3D);
@@ -373,8 +373,10 @@ Ref<PackedScene> PmxSceneBuilder::build_from_file(const String &p_path, float p_
 			body->set_restitution(rigid_body.restitution);
 			body->set_friction(rigid_body.friction);
 			body->set_group(rigid_body.group);
-			// PMX stores the groups this body does NOT collide with, Bullet wants the opposite.
-			body->set_group_mask((~rigid_body.non_collision_mask) & 0xFFFF);
+			// The PMX 16 bit field is the set of groups this body collides with, which is exactly
+			// Bullet's collision mask (the reference importer passes it through unchanged, and the
+			// values found in real models are dense, e.g. 0x7FF6 = every group except 0 and 3).
+			body->set_group_mask(rigid_body.collision_mask);
 			body->set_position(rigid_body.position * scale);
 			body->set_rotation(rigid_body.rotation);
 
@@ -400,8 +402,10 @@ Ref<PackedScene> PmxSceneBuilder::build_from_file(const String &p_path, float p_
 			joint->set_body_b_path(NodePath("../" + body_node_names[static_cast<size_t>(pmx_joint.body_b)]));
 			joint->set_position(pmx_joint.position * scale);
 			joint->set_rotation(pmx_joint.rotation);
-			joint->set_linear_lower_limit(pmx_joint.linear_lower);
-			joint->set_linear_upper_limit(pmx_joint.linear_upper);
+			// PMX translation limits are lengths, so the reference scales them together with the
+			// rigid body positions (angular limits are angles and stay untouched).
+			joint->set_linear_lower_limit(pmx_joint.linear_lower * scale);
+			joint->set_linear_upper_limit(pmx_joint.linear_upper * scale);
 			joint->set_angular_lower_limit(pmx_joint.angular_lower);
 			joint->set_angular_upper_limit(pmx_joint.angular_upper);
 			joint->set_linear_spring(pmx_joint.linear_spring);

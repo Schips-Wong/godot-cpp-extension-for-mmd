@@ -85,10 +85,9 @@ void MMDRigidBody::rebuild() {
 		return;
 	}
 	// MMD bodies must never fall asleep, otherwise bones freeze mid animation.
+	// The reference does this for every body, kinematic ones included.
 	created->setSleepingThresholds(btScalar(0.0), btScalar(0.0));
-	if (bone_mode != BONE_FOLLOW_BONE) {
-		created->forceActivationState(DISABLE_DEACTIVATION);
-	}
+	created->forceActivationState(DISABLE_DEACTIVATION);
 	created->setUserPointer(this);
 }
 
@@ -146,16 +145,17 @@ Transform3D MMDRigidBody::_get_bone_world_pose() const {
 	if (skeleton == nullptr || resolved_bone < 0) {
 		return Transform3D();
 	}
+	// get_bone_global_pose() includes the pose overrides written by physics driven bodies, so a
+	// bone that hangs below a simulated bone follows it (the reference reuses bone.transform of
+	// physics bones the same way).
+	return skeleton->get_global_transform() * skeleton->get_bone_global_pose(resolved_bone);
+}
 
-	// The animated pose is rebuilt from the local bone poses on purpose:
-	// get_bone_global_pose() already contains our own override, and
-	// get_bone_global_pose_no_override() can return a stale identity pose once another
-	// caller cleared the dirty flag (Godot 4.4+).
-	Transform3D bone_pose = skeleton->get_bone_pose(resolved_bone);
-	for (int32_t parent = skeleton->get_bone_parent(resolved_bone); parent >= 0; parent = skeleton->get_bone_parent(parent)) {
-		bone_pose = skeleton->get_bone_pose(parent) * bone_pose;
+Transform3D MMDRigidBody::_get_bone_rest_world_pose() const {
+	if (skeleton == nullptr || resolved_bone < 0) {
+		return Transform3D();
 	}
-	return skeleton->get_global_transform() * bone_pose;
+	return skeleton->get_global_transform() * skeleton->get_bone_global_rest(resolved_bone);
 }
 
 void MMDRigidBody::_ensure_bone_offset() {
@@ -166,22 +166,25 @@ void MMDRigidBody::_ensure_bone_offset() {
 	if (current == nullptr) {
 		return;
 	}
-	bone_offset = bullet_util::to_godot(current->getWorldTransform()) * _get_bone_world_pose().affine_inverse();
+	// The reference keeps the body frame expressed in bone space and derives it from the rest pose.
+	// With row vectors that is "rigidBody.WorldTransform * bone.globalRestTransform.Invert()",
+	// which in Godot's column convention is boneRest^-1 * bodyRest. The binding therefore does not
+	// depend on the animation pose at the time of the first step.
+	bone_offset = _get_bone_rest_world_pose().affine_inverse() * bullet_util::to_godot(current->getWorldTransform());
 	bone_offset_valid = true;
 }
 
 void MMDRigidBody::_sync_body_from_bone() {
-	btRigidBody *current = _get_bt_body();
-	if (current == nullptr) {
+	if (motion_state == nullptr) {
 		return;
 	}
 	_ensure_bone_offset();
 
-	const btTransform target = bullet_util::to_bt(bone_offset * _get_bone_world_pose());
-	motion_state->world_transform = target;
+	// Only the motion state is written. Bullet reads it in btRigidBody::saveKinematicState(),
+	// which also derives the kinematic velocity from the difference to the previous transform -
+	// that velocity is what lets a moving bone push the dynamic bodies around it.
+	motion_state->world_transform = bullet_util::to_bt(_get_bone_world_pose() * bone_offset);
 	motion_state->transform_dirty = false;
-	current->setWorldTransform(target);
-	current->setInterpolationWorldTransform(target);
 }
 
 void MMDRigidBody::_prepare_step() {
@@ -214,10 +217,11 @@ void MMDRigidBody::_finish_step() {
 
 	_ensure_bone_offset();
 
-	const Transform3D body_world = bullet_util::to_godot(current->getWorldTransform());
+	// Same source as the reference (PhysicsBone.GetTransform2 reads MotionState.WorldTransform).
+	const Transform3D body_world = bullet_util::to_godot(motion_state->world_transform);
 	Transform3D bone_world = body_world;
 	if (bone_offset_valid) {
-		bone_world = bone_offset.affine_inverse() * body_world;
+		bone_world = body_world * bone_offset.affine_inverse();
 	}
 	const Transform3D skeleton_space = skeleton->get_global_transform().affine_inverse() * bone_world;
 	skeleton->set_bone_global_pose_override(resolved_bone, skeleton_space, 1.0, true);
@@ -395,7 +399,7 @@ void MMDRigidBody::reset_bone_offset() {
 	if (current == nullptr) {
 		return;
 	}
-	bone_offset = bullet_util::to_godot(current->getWorldTransform()) * _get_bone_world_pose().affine_inverse();
+	bone_offset = _get_bone_rest_world_pose().affine_inverse() * bullet_util::to_godot(current->getWorldTransform());
 	bone_offset_valid = true;
 }
 
@@ -421,7 +425,7 @@ void MMDRigidBody::reset_to_bone() {
 		_ensure_bone_offset();
 	}
 
-	const btTransform target = bullet_util::to_bt(bone_offset * _get_bone_world_pose());
+	const btTransform target = bullet_util::to_bt(_get_bone_world_pose() * bone_offset);
 	current->setWorldTransform(target);
 	current->setInterpolationWorldTransform(target);
 	current->setLinearVelocity(btVector3(0, 0, 0));

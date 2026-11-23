@@ -85,7 +85,9 @@ TypedArray<Dictionary> PmxImporter::_get_import_options(const String &p_path, in
 
 	Dictionary scale;
 	scale["name"] = "scale";
-	scale["default_value"] = 1.0f;
+	// The reference importer scales every model to 0.1, which is the unit range its PMX masses and
+	// spring stiffnesses were tuned for. 1.0 would make gravity/springs behave ten times slower.
+	scale["default_value"] = 0.1f;
 	scale["property_hint"] = PROPERTY_HINT_RANGE;
 	scale["hint_string"] = "0.001,100,0.001,or_greater";
 	options.push_back(scale);
@@ -103,7 +105,7 @@ bool PmxImporter::_get_option_visibility(const String &p_path, const StringName 
 }
 
 Error PmxImporter::_import(const String &p_source_file, const String &p_save_path, const Dictionary &p_options, const TypedArray<String> &p_platform_variants, const TypedArray<String> &p_gen_files) const {
-	float scale = 1.0f;
+	float scale = 0.1f;
 	if (p_options.has("scale")) {
 		scale = static_cast<float>(static_cast<double>(p_options["scale"]));
 	}
