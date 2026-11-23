@@ -1,0 +1,137 @@
+# For syntax, see https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+# Builds the GDExtension for every shipping platform and publishes the results as a GitHub release.
+# Trigger by pushing a version tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`),
+# or run it manually from the "Actions" tab with an explicit tag name.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: windows, arch: x86_64, os: windows-latest, artifact: windows-x86_64 }
+          - { platform: linux, arch: x86_64, os: ubuntu-22.04, artifact: linux-x86_64 }
+          - { platform: linux, arch: arm64, os: ubuntu-22.04-arm, artifact: linux-arm64 }
+          - { platform: macos, arch: universal, os: macos-latest, artifact: macos-universal }
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      # Setup dependencies
+      - name: Setup godot-cpp
+        uses: ./godot-cpp/.github/actions/setup-godot-cpp
+        with:
+          platform: ${{ matrix.platform }}
+          em-version: 3.1.62
+
+      # Build GDExtension (with caches)
+
+      - name: Restore .scons_cache
+        uses: ./godot-cpp/.github/actions/godot-cache-restore
+        with:
+          scons-cache: ${{ github.workspace }}/.scons-cache/
+          cache-name: release_${{ matrix.platform }}_${{ matrix.arch }}
+
+      # The editor build is required too: the .gdextension lists editor libraries for the
+      # matching platform tags, and the loader picks the entry with the most matching tags
+      # without falling back, so an editor session needs the editor binary.
+      - name: Build GDExtension
+        shell: sh
+        env:
+          SCONS_CACHE: ${{ github.workspace }}/.scons-cache/
+        run: |
+          for target_type in editor template_debug template_release; do
+            scons target=$target_type platform=${{ matrix.platform }} arch=${{ matrix.arch }} precision=single
+          done
+
+      - name: Save .scons_cache
+        uses: ./godot-cpp/.github/actions/godot-cache-save
+        with:
+          scons-cache: ${{ github.workspace }}/.scons-cache/
+          cache-name: release_${{ matrix.platform }}_${{ matrix.arch }}
+
+      # Clean up compilation files
+      - name: Windows - Delete compilation files
+        if: ${{ matrix.platform == 'windows' }}
+        shell: pwsh
+        run: |
+          Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force -ErrorAction SilentlyContinue
+
+      # Package the addon plus the built libraries, keeping the layout of a Godot project:
+      #   addons/pmx_import/...            - editor import plugin
+      #   bin/bullet-mmd.gdextension       - extension definition
+      #   bin/<platform>/<library>         - platform binaries
+      - name: Package (Windows)
+        if: ${{ matrix.platform == 'windows' }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage/addons, stage/bin | Out-Null
+          Copy-Item project/addons/pmx_import stage/addons -Recurse
+          Copy-Item project/bin/bullet-mmd.gdextension stage/bin
+          Copy-Item project/bin/${{ matrix.platform }} stage/bin -Recurse
+          Remove-Item stage/bin/${{ matrix.platform }}/* -Include *.exp,*.lib,*.pdb -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path stage/* -DestinationPath bullet-mmd-${{ matrix.artifact }}.zip
+
+      - name: Package (Unix)
+        if: ${{ matrix.platform != 'windows' }}
+        shell: bash
+        run: |
+          mkdir -p stage/addons stage/bin
+          cp -R project/addons/pmx_import stage/addons/
+          cp project/bin/bullet-mmd.gdextension stage/bin/
+          cp -R project/bin/${{ matrix.platform }} stage/bin/
+          (cd stage && zip -r "../bullet-mmd-${{ matrix.artifact }}.zip" .)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: bullet-mmd-${{ matrix.artifact }}
+          path: bullet-mmd-${{ matrix.artifact }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: bullet-mmd-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          if gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/*.zip --repo "${{ github.repository }}" --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/*.zip \
+              --repo "${{ github.repository }}" \
+              --title "bullet-mmd $RELEASE_TAG" \
+              --generate-notes
+          fi
