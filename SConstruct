@@ -5,7 +5,7 @@ import sys
 from methods import print_error
 
 
-libname = "bullet3"
+libname = "bullet-mmd"
 projectdir = "project"
 
 localEnv = Environment(tools=["default"], PLATFORM="")
